@@ -5,6 +5,7 @@ import { buildStemMeta } from '../lib/stems'
 import { fmtTime } from '../lib/format'
 import { YouTubeHost, type YTState } from '../lib/youtube'
 import { StemLane } from './StemLane'
+import { LyricsPanel } from './LyricsPanel'
 import { Transport, type PresetId } from './Transport'
 import { DownloadIcon } from './Icons'
 
@@ -54,6 +55,7 @@ export function Player({ song }: Props): React.ReactElement {
   const [solos, setSolos] = useState<Set<StemId>>(new Set())
   const [master, setMaster] = useState(0.9)
   const [preset, setPreset] = useState<PresetId | 'custom'>('all')
+  const [showLyrics, setShowLyrics] = useState(false)
 
   const stemMeta = useMemo(() => buildStemMeta(Object.keys(buffers) as StemId[]), [buffers])
 
@@ -77,6 +79,7 @@ export function Player({ song }: Props): React.ReactElement {
     setMutes(new Set())
     setSolos(new Set())
     setPreset('all')
+    setShowLyrics(false)
     engine.stopAll()
 
     let cancelled = false
@@ -243,9 +246,10 @@ export function Player({ song }: Props): React.ReactElement {
     setPreset(p)
     setMutes(new Set())
     if (p === 'all') setSolos(new Set())
-    else if (p === 'karaoke')
+    else if (p === 'karaoke') {
       setSolos(new Set<StemId>(stemMeta.filter((s) => s.id !== 'vocals').map((s) => s.id)))
-    else if (p === 'acapella') setSolos(new Set<StemId>(['vocals']))
+      setShowLyrics(true)
+    } else if (p === 'acapella') setSolos(new Set<StemId>(['vocals']))
     else if (p === 'drumnbass') setSolos(new Set<StemId>(['drums', 'bass']))
   }
 
@@ -372,9 +376,20 @@ export function Player({ song }: Props): React.ReactElement {
             master={master}
             onMaster={setMaster}
             youtubeUrl={youtubeUrl}
+            lyricsOpen={showLyrics}
+            onToggleLyrics={() => setShowLyrics((v) => !v)}
           />
 
-          <div className="mt-4 space-y-2">
+          {showLyrics && (
+            <LyricsPanel
+              videoId={song.videoId}
+              title={song.title}
+              duration={song.duration}
+              getPosition={getPosition}
+            />
+          )}
+
+          <div className={`mt-4 space-y-2 ${preset === 'karaoke' && showLyrics ? 'hidden' : ''}`}>
             {stemMeta.map((meta) => (
               <StemLane
                 key={meta.id}

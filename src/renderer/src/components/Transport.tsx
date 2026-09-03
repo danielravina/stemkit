@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { fmtTime } from '../lib/format'
-import { PlayIcon, PauseIcon, ExternalIcon } from './Icons'
+import { PlayIcon, PauseIcon, ExternalIcon, LyricsIcon } from './Icons'
 
 export type PresetId = 'all' | 'karaoke' | 'acapella' | 'drumnbass'
 
@@ -22,6 +22,8 @@ interface Props {
   master: number
   onMaster: (v: number) => void
   youtubeUrl: string
+  lyricsOpen: boolean
+  onToggleLyrics: () => void
 }
 
 function SeekBar({
@@ -102,7 +104,9 @@ export function Transport({
   onPreset,
   master,
   onMaster,
-  youtubeUrl
+  youtubeUrl,
+  lyricsOpen,
+  onToggleLyrics
 }: Props): React.ReactElement {
   return (
     <div className="glass rounded-2xl px-5 py-4 mt-4 flex flex-col gap-4">
@@ -121,20 +125,34 @@ export function Transport({
           )}
         </button>
 
-        <div className="no-drag flex items-center gap-1 bg-white/5 rounded-full p-1">
-          {PRESETS.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => onPreset(p.id)}
-              className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-all ${
-                preset === p.id
-                  ? 'bg-white/90 text-black'
-                  : 'text-white/60 hover:text-white'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="no-drag flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-white/5 rounded-full p-1">
+            {PRESETS.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => onPreset(p.id)}
+                className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-all ${
+                  preset === p.id
+                    ? 'bg-white/90 text-black'
+                    : 'text-white/60 hover:text-white'
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={onToggleLyrics}
+            title={lyricsOpen ? 'Hide lyrics' : 'Show lyrics'}
+            className={`px-3 py-1.5 rounded-full text-[13px] font-medium transition-all flex items-center gap-1.5 ${
+              lyricsOpen
+                ? 'bg-violet-400/90 text-black'
+                : 'bg-white/5 text-white/60 hover:text-white'
+            }`}
+          >
+            <LyricsIcon className="w-3.5 h-3.5" />
+            Lyrics
+          </button>
         </div>
 
         <div className="flex items-center gap-3 w-44">

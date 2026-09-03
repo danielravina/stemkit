@@ -68,6 +68,12 @@ export interface UpdateEvent {
   pct?: number
 }
 
+export interface LyricsResult {
+  found: boolean
+  synced: string | null
+  plain: string | null
+}
+
 export interface StemKitApi {
   envStatus(): Promise<EnvStatus>
   envBootstrap(): Promise<boolean>
@@ -78,6 +84,7 @@ export interface StemKitApi {
   exportStem(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>
   exportAllStems(videoId: string): Promise<{ saved: boolean; path?: string; count?: number }>
   searchYouTube(query: string): Promise<SearchResult[]>
+  fetchLyrics(videoId: string, title: string, duration: number): Promise<LyricsResult>
   startJob(url: string, model?: string, stems?: string[]): Promise<{ started: boolean }>
   cancelJob(videoId?: string): Promise<void>
   openExternal(url: string): Promise<void>
