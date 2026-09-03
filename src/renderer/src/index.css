@@ -94,3 +94,46 @@ input[type="range"]:hover::-webkit-slider-thumb {
   border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(18px);
 }
+
+.lyrics-panel {
+  position: relative;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  scroll-behavior: auto;
+}
+
+.lyric-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  text-align: center;
+}
+
+.lyric-line {
+  max-width: 42rem;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.55);
+  opacity: 0.9;
+  transform: scale(1);
+  transform-origin: center center;
+  transition: transform 0.25s ease, opacity 0.25s ease, color 0.25s ease;
+  contain: layout paint;
+}
+
+.lyric-line.is-past {
+  color: rgba(255, 255, 255, 0.32);
+  opacity: 0.75;
+  transform: scale(0.97);
+}
+
+.lyric-line.is-active {
+  font-weight: 600;
+  color: #fff;
+  opacity: 1;
+  transform: scale(1.04);
+  text-shadow: 0 0 14px rgba(167, 139, 250, 0.2);
+}

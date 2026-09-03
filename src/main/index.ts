@@ -13,6 +13,7 @@ import {
 } from './env'
 import { loadSongs, removeSong, stemBuffers, stemsDir, stemsFor, mixWavPath } from './library'
 import { startJob, cancelJob, searchYouTube } from './pipeline'
+import { fetchLyrics } from './lyrics'
 import { initUpdater } from './updater'
 import { runSmoke } from './smoke'
 
@@ -184,6 +185,9 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('search:youtube', (_e, query: string) => searchYouTube(query))
+  ipcMain.handle('lyrics:fetch', (_e, videoId: string, title: string, duration: number) =>
+    fetchLyrics(String(videoId ?? ''), String(title ?? ''), Number(duration) || 0)
+  )
   ipcMain.handle('app:version', () => app.getVersion())
   initUpdater()
   ipcMain.handle('open-external', (_e, url: string) => {
