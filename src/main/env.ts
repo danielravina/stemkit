@@ -111,6 +111,33 @@ let engineDepsReady = false
 
 let gpuProbe: Promise<boolean> | null = null
 
+/* the roformer engine runs its STFT on the accelerator, and MPS has no
+   aten::_fft_r2c on Intel Macs with AMD graphics — the split dies there after
+   a 913MB checkpoint download. So probe the op rather than just the device;
+   demucs moves its own STFT to the CPU and is unaffected either way */
+const GPU_PROBE = `
+import torch
+device = None
+if torch.cuda.is_available():
+    device = 'cuda'
+elif torch.backends.mps.is_available():
+    device = 'mps'
+ok = False
+if device is not None:
+    try:
+        torch.stft(
+            torch.zeros(2048, device=device),
+            n_fft=512,
+            hop_length=128,
+            window=torch.hann_window(512, device=device),
+            return_complex=True,
+        )
+        ok = True
+    except Exception:
+        ok = False
+print(1 if ok else 0)
+`
+
 /* true when the venv's torch can run the roformer engine on a GPU
    (MPS on Apple Silicon, CUDA on NVIDIA). CPU-only machines stay on
    the demucs engine, which is much faster without GPU acceleration */
@@ -118,14 +145,7 @@ export function hasGpuAcceleration(): Promise<boolean> {
   // test hook: simulates a CPU-only machine (the Windows path)
   if (process.env.STEMKIT_FORCE_CPU === '1') return Promise.resolve(false)
   if (!gpuProbe) {
-    gpuProbe = runCapture(
-      venvPython(),
-      [
-        '-c',
-        'import torch;print(1 if (torch.cuda.is_available() or torch.backends.mps.is_available()) else 0)'
-      ],
-      30000
-    )
+    gpuProbe = runCapture(venvPython(), ['-c', GPU_PROBE], 30000)
       .then((out) => out.trim().endsWith('1'))
       .catch(() => false)
   }
@@ -549,6 +569,22 @@ export async function ensureRuntimePython(): Promise<boolean> {
   }
 }
 
+/* PyTorch shipped its last macOS x86_64 wheels in 2.2.2, so the 2.5.1 pin
+   cannot resolve on Intel Macs and the whole install aborts. Those machines
+   have no GPU acceleration anyway, so they run the demucs engine, which
+   2.2.2 supports. Probe the interpreter rather than process.arch — a system
+   python can be a different architecture to Electron. */
+async function torchPins(python: string): Promise<string[]> {
+  let machine = process.arch === 'arm64' ? 'arm64' : 'x86_64'
+  try {
+    machine = (
+      await runCapture(python, ['-c', 'import platform;print(platform.machine())'], 15000)
+    ).trim()
+  } catch {}
+  const version = process.platform === 'darwin' && machine !== 'arm64' ? '2.2.2' : '2.5.1'
+  return [`torch==${version}`, `torchaudio==${version}`]
+}
+
 export async function bootstrap(): Promise<boolean> {
   if (state.bootstrapping) return false
   if (!state.python.found || !state.python.path) {
@@ -586,6 +622,8 @@ export async function bootstrap(): Promise<boolean> {
       child.on('error', reject)
     })
 
+    const torch = await torchPins(pip)
+
     sendEnvEvent('Downloading the separation engine (~2GB, one time) — grab a coffee')
     let lastGeneric = 0
     await new Promise<void>((resolve, reject) => {
@@ -596,8 +634,7 @@ export async function bootstrap(): Promise<boolean> {
         '--progress-bar',
         'off',
         'demucs==4.0.1',
-         'torch==2.5.1',
-        'torchaudio==2.5.1',
+        ...torch,
         'numpy<2',
         'beartype',
         'rotary-embedding-torch',
