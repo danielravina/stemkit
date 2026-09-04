@@ -25,7 +25,7 @@ Everything runs locally — no accounts, no cloud, no API keys.
 
 ## Download
 
-Grab installers from [Releases](https://github.com/danielravina/stemkit/releases):
+Grab installers from [Releases](https://github.com/danvelope/stemkit/releases):
 - **macOS** (Apple Silicon): `StemKit-x.y.z-mac-arm64.dmg`
 - **Windows**: `StemKit-Setup-x.y.z.exe` (installer) or portable `.zip`
 

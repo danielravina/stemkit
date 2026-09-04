@@ -8,7 +8,7 @@ asar: true
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 publish:
   provider: github
-  owner: danielravina
+  owner: danvelope
   repo: stemkit
 extraResources:
   - from: python
