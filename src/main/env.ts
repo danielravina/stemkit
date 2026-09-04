@@ -1,7 +1,8 @@
 import { spawn, execFile } from 'child_process'
-import { existsSync, writeFileSync, readdirSync, createWriteStream, mkdirSync, chmodSync, unlinkSync, statSync, renameSync } from 'fs'
+import { existsSync, writeFileSync, readdirSync, createWriteStream, createReadStream, mkdirSync, chmodSync, unlinkSync, statSync, renameSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
+import { createHash } from 'crypto'
 import { app, BrowserWindow, net } from 'electron'
 import type { EngineStatus } from '../shared/types'
 
@@ -57,6 +58,11 @@ function runtimeDir(): string {
   return join(userDataDir(), 'python-runtime')
 }
 
+function runtimeTriple(): string {
+  const arch = process.arch === 'arm64' ? 'aarch64' : 'x86_64'
+  return IS_WIN ? `${arch}-pc-windows-msvc-shared` : `${arch}-apple-darwin`
+}
+
 function runtimePython(): string {
   return IS_WIN
     ? join(runtimeDir(), 'python', 'python.exe')
@@ -64,18 +70,24 @@ function runtimePython(): string {
 }
 
 function runtimeArchivePath(): string {
-  const arch = process.arch === 'arm64' ? 'aarch64' : 'x86_64'
-  const triple = IS_WIN ? `${arch}-pc-windows-msvc-shared` : `${arch}-apple-darwin`
-  return join(userDataDir(), `cpython-${PBS_VERSION}-${triple}-install_only.tar.gz`)
+  return join(userDataDir(), `cpython-${PBS_VERSION}-${runtimeTriple()}-install_only.tar.gz`)
 }
 
 function runtimeDownloadUrl(): string {
-  const arch = process.arch === 'arm64' ? 'aarch64' : 'x86_64'
-  const triple = IS_WIN ? `${arch}-pc-windows-msvc-shared` : `${arch}-apple-darwin`
   return (
     `https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/` +
-    `cpython-${PBS_VERSION}%2B${PBS_TAG}-${triple}-install_only.tar.gz`
+    `cpython-${PBS_VERSION}%2B${PBS_TAG}-${runtimeTriple()}-install_only.tar.gz`
   )
+}
+
+/* sha256 of each runtime archive, copied from the release's SHA256SUMS.
+   Downloads are rejected unless they match, so a compromised GitHub release
+   can't put a tampered interpreter on disk. Bump together with PBS_TAG.
+   Regenerate with: curl <release>/SHA256SUMS | grep install_only.tar.gz */
+const RUNTIME_SHA256: Record<string, string> = {
+  'aarch64-apple-darwin': '540225743ca9ca04d7e0de520e211ecafb379677c49fba4b89334e7248219cb2',
+  'x86_64-apple-darwin': 'f498693f03fd672a4dc581ef0e1101102d33964352c35ecff21686a8d00744c9',
+  'x86_64-pc-windows-msvc-shared': 'd71cde066b614903e9f243c4babd179e7e978fcfa95702355566463e623abe6c'
 }
 
 export function bundledFfmpeg(): string | null {
@@ -429,19 +441,51 @@ export async function refreshReady(): Promise<boolean> {
   return state.ready
 }
 
+function sha256File(path: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    const stream = createReadStream(path)
+    stream.on('data', (chunk) => hash.update(chunk))
+    stream.on('end', () => resolve(hash.digest('hex')))
+    stream.on('error', reject)
+  })
+}
+
+interface DownloadOpts {
+  expectedSha256?: string
+}
+
 function downloadTo(
   url: string,
   dest: string,
   label: string,
-  onProgress?: (pct: number) => void
+  onProgress?: (pct: number) => void,
+  opts?: DownloadOpts
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     // download into <dest>.part so an interrupted fetch can resume and a
-    // partial file is never mistaken for the real one; rename on success
+    // partial file is never mistaken for the real one; verify the pinned
+    // sha256 (if any) and only then rename into place
     const part = dest + '.part'
     const base = existsSync(part) ? statSync(part).size : 0
     let lastPct = -1
     let lastFine = -1
+    const finish = async (): Promise<void> => {
+      if (opts?.expectedSha256) {
+        const actual = await sha256File(part)
+        if (actual !== opts.expectedSha256) {
+          // never keep a file that doesn't match: a retry starts clean
+          try {
+            unlinkSync(part)
+          } catch {}
+          throw new Error(
+            `${label} failed integrity check (sha256 ${actual.slice(0, 12)}…, expected ${opts.expectedSha256.slice(0, 12)}…)`
+          )
+        }
+      }
+      renameSync(part, dest)
+      onProgress?.(100)
+    }
     const req = net.request({
       url,
       redirect: 'follow',
@@ -450,9 +494,9 @@ function downloadTo(
     req.on('response', (res) => {
       if (res.statusCode === 416 && base > 0) {
         // the .part already holds the whole file (killed right before the rename)
-        renameSync(part, dest)
-        onProgress?.(100)
-        resolve()
+        finish()
+          .then(resolve)
+          .catch((e) => reject(e instanceof Error ? e : new Error(String(e))))
         return
       }
       if (res.statusCode !== 200 && res.statusCode !== 206) {
@@ -484,13 +528,9 @@ function downloadTo(
       })
       res.on('end', () =>
         out.end(() => {
-          try {
-            renameSync(part, dest)
-            onProgress?.(100)
-            resolve()
-          } catch (e) {
-            reject(e instanceof Error ? e : new Error(String(e)))
-          }
+          finish()
+            .then(resolve)
+            .catch((e) => reject(e instanceof Error ? e : new Error(String(e))))
         })
       )
       res.on('error', (e) => {
@@ -511,6 +551,8 @@ function downloadTo(
 const CKPT_NAME = 'MelBandRoformer.ckpt'
 const CKPT_URL =
   'https://huggingface.co/KimberleyJSN/melbandroformer/resolve/main/MelBandRoformer.ckpt'
+/* pinned LFS sha256 of the checkpoint, from the HuggingFace repo metadata */
+const CKPT_SHA256 = '87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e'
 
 export function vocalsEnginePath(): string {
   return join(modelsDir(), CKPT_NAME)
@@ -518,6 +560,7 @@ export function vocalsEnginePath(): string {
 
 let vocalsEnginePromise: Promise<boolean> | null = null
 const vocalsProgressListeners = new Set<(pct: number) => void>()
+let vocalsVerified = false
 
 export function ensureVocalsEngine(onProgress?: (pct: number) => void): Promise<boolean> {
   if (onProgress) vocalsProgressListeners.add(onProgress)
@@ -525,17 +568,39 @@ export function ensureVocalsEngine(onProgress?: (pct: number) => void): Promise<
     if (onProgress) vocalsProgressListeners.delete(onProgress)
     return true
   }
-  if (existsSync(vocalsEnginePath())) {
+  if (vocalsVerified && existsSync(vocalsEnginePath())) {
     detach()
     return Promise.resolve(true)
   }
   if (!vocalsEnginePromise) {
     vocalsEnginePromise = (async () => {
+      if (existsSync(vocalsEnginePath())) {
+        // files written by older app versions were never verified; hash the
+        // cached checkpoint once per session and re-download on mismatch
+        const ok = await sha256File(vocalsEnginePath())
+          .then((digest) => digest === CKPT_SHA256)
+          .catch(() => false)
+        if (ok) {
+          vocalsVerified = true
+          return true
+        }
+        sendEnvEvent('Vocals engine failed integrity check — downloading again')
+        try {
+          unlinkSync(vocalsEnginePath())
+        } catch {}
+      }
       mkdirSync(modelsDir(), { recursive: true })
       sendEnvEvent('Downloading the vocals engine (~913MB, one time)')
-      await downloadTo(CKPT_URL, vocalsEnginePath(), 'vocals engine', (pct) => {
-        for (const listener of vocalsProgressListeners) listener(pct)
-      })
+      await downloadTo(
+        CKPT_URL,
+        vocalsEnginePath(),
+        'vocals engine',
+        (pct) => {
+          for (const listener of vocalsProgressListeners) listener(pct)
+        },
+        { expectedSha256: CKPT_SHA256 }
+      )
+      vocalsVerified = true
       sendEnvEvent('Vocals engine ready', 'success')
       return true
     })()
@@ -673,6 +738,10 @@ export function ensureGpuEngine(onProgress?: (pct: number) => void): Promise<boo
             '-m',
             'pip',
             'install',
+            // required: the CPU torch from bootstrap already satisfies the
+            // version spec, so without -U pip would no-op and never swap in
+            // the cuda build
+            '-U',
             '--no-cache-dir',
             `torch==${GPU_TORCH_VERSION}`,
             `torchaudio==${GPU_TORCH_VERSION}`,
@@ -711,6 +780,17 @@ export function ensureGpuEngine(onProgress?: (pct: number) => void): Promise<boo
           )
         })
       })
+      // verify the swap actually took effect: torch must report a cuda build
+      // (torch.version.cuda is set by the wheel itself, independent of whether
+      // an NVIDIA driver/GPU is present on this machine)
+      const swapped = await runCapture(
+        venvPython(),
+        ['-c', 'import torch;print(1 if torch.version.cuda else 0)'],
+        30000
+      ).catch(() => '0')
+      if (!swapped.trim().startsWith('1')) {
+        throw new Error('cuda torch is not active after install (torch.version.cuda unset)')
+      }
       // refresh the cached cuda probe so Settings' status lines update
       gpuProbe = null
       gpuInfo = undefined
@@ -777,8 +857,14 @@ export async function ensureRuntimePython(): Promise<boolean> {
   if (existsSync(runtimePython())) return true
   try {
     const archive = runtimeArchivePath()
+    const expected = RUNTIME_SHA256[runtimeTriple()]
+    if (!expected) {
+      throw new Error(`no pinned sha256 for the runtime archive (${runtimeTriple()})`)
+    }
     sendEnvEvent('Downloading components (~35MB)')
-    await downloadTo(runtimeDownloadUrl(), archive, 'components')
+    await downloadTo(runtimeDownloadUrl(), archive, 'components', undefined, {
+      expectedSha256: expected
+    })
     sendEnvEvent('Unpacking components')
     await extractArchive(archive, runtimeDir())
     unlinkSync(archive)
