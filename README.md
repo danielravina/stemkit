@@ -99,7 +99,7 @@ video iframe (muted) + Web Audio stem playback · master clock = the audio itsel
 ## Notes
 
 - Downloading audio from YouTube violates their ToS for public products — keep this personal.
-- yt-dlp breaks occasionally when YouTube changes things; the error dialog offers a one-click update (updates `yt-dlp` + the challenge solver together).
+- yt-dlp breaks occasionally when YouTube changes things; the error dialog offers a one-click update (updates `yt-dlp` + the challenge solver together). That update is intentionally unpinned — freshness wins over integrity there — while everything else the app fetches (python runtime, checkpoints, pip installs) is verified against SHA-256 digests pinned in the repo (`python/requirements*.lock`, digest constants in `src/main/env.ts`); a mismatched download is deleted, never used.
 
 ## Layout
 

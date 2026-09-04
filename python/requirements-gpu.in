@@ -1,0 +1,14 @@
+# CUDA torch swap (Windows + NVIDIA only, src/main/env.ts ensureGpuEngine()).
+# Resolved against download.pytorch.org's cu121 index; hashes come from that
+# index, so they don't match PyPI's cpu wheels by design.
+#
+# Regenerate the lock after a GPU_TORCH_VERSION bump (windows, cp310-312):
+#   for v in 3.10 3.11 3.12; do
+#     uv pip compile python/requirements-gpu.in --generate-hashes \
+#       --index-url https://download.pytorch.org/whl/cu121 \
+#       --python-platform windows --python-version $v -o /tmp/gpu-$v.lock
+#   done
+#   (merge the per-python locks — union of hashes per pin — into
+#    python/requirements-gpu.lock)
+torch==2.5.1
+torchaudio==2.5.1

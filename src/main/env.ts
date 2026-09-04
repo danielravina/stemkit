@@ -115,6 +115,28 @@ export function roformerScript(): string {
   return join(app.getAppPath(), 'python', 'roformer.py')
 }
 
+/* hash-pinned requirements locks shipped with the app; pip runs with
+   --require-hashes against these so every wheel it installs is verified
+   against a digest committed to this repo */
+function pythonResource(name: string): string {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, 'python', name)
+  }
+  return join(app.getAppPath(), 'python', name)
+}
+
+function engineRequirementsLock(): string {
+  return pythonResource('requirements.lock')
+}
+
+function engineSolverRequirementsLock(): string {
+  return pythonResource('requirements-ejs.lock')
+}
+
+function gpuRequirementsLock(): string {
+  return pythonResource('requirements-gpu.lock')
+}
+
 export function modelsDir(): string {
   return join(userDataDir(), 'models')
 }
@@ -206,9 +228,11 @@ export async function ensureEngineDeps(): Promise<boolean> {
   sendEnvEvent('Preparing engine components…')
   try {
     await new Promise<void>((resolve, reject) => {
+      // the full engine lock also pins these three; installing from it
+      // completes whatever the venv is missing, hashes verified
       const child = spawn(
         venvPython(),
-        ['-m', 'pip', 'install', '-q', 'beartype', 'rotary-embedding-torch', 'einops'],
+        ['-m', 'pip', 'install', '-q', '--require-hashes', '-r', engineRequirementsLock()],
         { env: { ...process.env } }
       )
       child.on('close', (code) =>
@@ -618,62 +642,50 @@ export function ensureVocalsEngine(onProgress?: (pct: number) => void): Promise<
   return vocalsEnginePromise.then(detach)
 }
 
-/* htdemucs_ft checkpoint (~320MB, fine-tuned demucs). Fetched through the
-   venv's torch-hub (get_model) so the cache location and file naming match
-   exactly what separate.py expects at separation time. Progress is parsed
-   from the downloader's output and reported via env events */
+/* htdemucs_ft checkpoint (~320MB, fine-tuned demucs). demucs' own torch-hub
+   downloader fetches these from Meta's CDN with only an 8-hex-char prefix
+   check, so we download them ourselves — with full pinned sha256 digests —
+   into the exact cache location and filenames torch-hub uses, and
+   separate.py's get_model() finds them already cached. Progress is
+   aggregated across the bag the same way torch-hub's per-file bars were */
 let ftWeightsPromise: Promise<boolean> | null = null
 const ftProgressListeners = new Set<(pct: number) => void>()
 let ftVerified = false
 
-// htdemucs_ft is a bag of 4 checkpoints (demucs/remote/htdemucs_ft.yaml);
-// torch-hub downloads them one after another, each with its own bar
+// htdemucs_ft is a bag of 4 checkpoints (demucs/remote/htdemucs_ft.yaml +
+// remote/files.txt); the 8-hex suffix in each URL basename is a sha256 prefix
+// that torch-hub re-verifies at load time. Digests pinned from the CDN.
 const FT_BAG_COUNT = 4
+const FT_BAG: Array<[url: string, sha256: string]> = [
+  [
+    'https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/f7e0c4bc-ba3fe64a.th',
+    'ba3fe64ae8ef66ac9a4857222ce48efbdc5eb3ad375cb79dd13debee5aaa4066'
+  ],
+  [
+    'https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/d12395a8-e57c48e6.th',
+    'e57c48e6b0e38af4f7118d7bd08c49f0a0c0edf7d09143bdd902ea0d237303e6'
+  ],
+  [
+    'https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/92cfc3b6-ef3bcb9c.th',
+    'ef3bcb9c8b40d14ae5d51b6db2587339cc12c6b77c0be151ce6d69002e087bf2'
+  ],
+  [
+    'https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/04573f0d-f3cf25b2.th',
+    'f3cf25b222c4eed7cd49dd8b2c9597d50c18bd154090f7b919cfa5f93cf22c49'
+  ]
+]
 
-function torchHubFetch(model: string, onProgress?: (pct: number) => void): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      venvPython(),
-      ['-c', `from demucs.pretrained import get_model; get_model(${JSON.stringify(model)})`],
-      { env: { ...process.env } }
-    )
-    let lastPct = 0
-    let filesDone = 0
-    let stderrTail = ''
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderrTail = (stderrTail + chunk.toString()).slice(-1000)
-      for (const piece of chunk.toString().split(/[\r\n]/)) {
-        const m = piece.match(/(\d{1,3})%/)
-        if (!m) continue
-        const pct = Math.min(100, parseInt(m[1], 10))
-        if (pct < lastPct) {
-          // the next checkpoint's bar wrapped — count the previous as done
-          filesDone = Math.min(filesDone + 1, FT_BAG_COUNT - 1)
-        }
-        lastPct = pct
-        const overall = Math.min(
-          99,
-          Math.round(((filesDone + pct / 100) / FT_BAG_COUNT) * 100)
-        )
-        sendEnvEvent(`fine-tuned engine: ${overall}%`)
-        onProgress?.(overall)
-      }
-    })
-    child.on('error', reject)
-    child.on('close', (code) => {
-      if (code === 0) {
-        onProgress?.(100)
-        resolve()
-      } else {
-        reject(
-          new Error(
-            stderrTail.split('\n').filter(Boolean).slice(-1).join('') ||
-              `fine-tuned engine download exited ${code}`
-          )
-        )
-      }
-    })
-  })
+async function torchHubCheckpointsDir(): Promise<string> {
+  // ask the venv's torch where its hub cache lives (TORCH_HOME and
+  // XDG_CACHE_HOME can move it; hardcoding the default would strand files)
+  const out = await runCapture(
+    venvPython(),
+    ['-c', 'import torch;print(torch.hub.get_dir())'],
+    60000
+  )
+  const dir = out.trim().split('\n').pop() ?? ''
+  if (!dir) throw new Error('could not locate the torch-hub cache directory')
+  return join(dir, 'checkpoints')
 }
 
 export function ensureFtWeights(onProgress?: (pct: number) => void): Promise<boolean> {
@@ -684,10 +696,50 @@ export function ensureFtWeights(onProgress?: (pct: number) => void): Promise<boo
   }
   if (!ftWeightsPromise) {
     ftWeightsPromise = (async () => {
-      sendEnvEvent('Downloading the fine-tuned engine (~320MB, one time)')
-      await torchHubFetch('htdemucs_ft', (pct) => {
-        for (const listener of ftProgressListeners) listener(pct)
-      })
+      if (ftVerified) {
+        onProgress?.(100)
+        return true
+      }
+      sendEnvEvent('Fetching the fine-tuned engine (~320MB, one time)')
+      const ckptDir = await torchHubCheckpointsDir()
+      mkdirSync(ckptDir, { recursive: true })
+      let filesDone = 0
+      for (const [url, sha256] of FT_BAG) {
+        const name = url.slice(url.lastIndexOf('/') + 1)
+        const path = join(ckptDir, name)
+        if (existsSync(path)) {
+          // cached copies (possibly written by torch-hub in an older
+          // version) are hashed once per session; a mismatch re-downloads
+          const ok = await sha256File(path)
+            .then((digest) => digest === sha256)
+            .catch(() => false)
+          if (ok) {
+            filesDone++
+            continue
+          }
+          sendEnvEvent('Fine-tuned engine failed integrity check — downloading again')
+          try {
+            unlinkSync(path)
+          } catch {}
+        }
+        await downloadTo(
+          url,
+          path,
+          'fine-tuned engine',
+          (pct) => {
+            const overall = Math.min(
+              99,
+              Math.round(((filesDone + pct / 100) / FT_BAG_COUNT) * 100)
+            )
+            sendEnvEvent(`fine-tuned engine: ${overall}%`)
+            for (const listener of ftProgressListeners) listener(overall)
+            onProgress?.(overall)
+          },
+          { expectedSha256: sha256 }
+        )
+        filesDone++
+      }
+      onProgress?.(100)
       sendEnvEvent('Fine-tuned engine ready', 'success')
       ftVerified = true
       return true
@@ -709,8 +761,8 @@ export function ensureFtWeights(onProgress?: (pct: number) => void): Promise<boo
 /* CUDA build of torch (windows + nvidia). The default bootstrap installs the
    CPU wheel from PyPI; this swaps in the cu121 build (~2.5GB download) on
    demand when the GPU-acceleration toggle is enabled. It stays installed when
-   the toggle goes back off — CUDA torch handles cpu devices fine */
-const GPU_TORCH_VERSION = '2.5.1'
+   the toggle goes back off — CUDA torch handles cpu devices fine. Wheels are
+   hash-pinned in python/requirements-gpu.lock (resolved from the cu121 index) */
 const GPU_TORCH_INDEX = 'https://download.pytorch.org/whl/cu121'
 
 let gpuEnginePromise: Promise<boolean> | null = null
@@ -743,8 +795,9 @@ export function ensureGpuEngine(onProgress?: (pct: number) => void): Promise<boo
             // the cuda build
             '-U',
             '--no-cache-dir',
-            `torch==${GPU_TORCH_VERSION}`,
-            `torchaudio==${GPU_TORCH_VERSION}`,
+            '--require-hashes',
+            '-r',
+            gpuRequirementsLock(),
             '--index-url',
             GPU_TORCH_INDEX
           ],
@@ -932,14 +985,9 @@ export async function bootstrap(): Promise<boolean> {
         'install',
         '--progress-bar',
         'off',
-        'demucs==4.0.1',
-         'torch==2.5.1',
-        'torchaudio==2.5.1',
-        'numpy<2',
-        'beartype',
-        'rotary-embedding-torch',
-        'einops',
-        'yt-dlp'
+        '--require-hashes',
+        '-r',
+        engineRequirementsLock()
       ])
       let buffer = ''
       child.stdout?.on('data', (chunk: Buffer) => {
@@ -971,7 +1019,14 @@ export async function bootstrap(): Promise<boolean> {
     })
 
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(pip, ['-m', 'pip', 'install', 'yt-dlp-ejs'])
+      const child = spawn(pip, [
+        '-m',
+        'pip',
+        'install',
+        '--require-hashes',
+        '-r',
+        engineSolverRequirementsLock()
+      ])
       let lastErr = ''
       child.stdout?.on('data', (chunk: Buffer) => {
         for (const line of chunk.toString().split('\n')) {
@@ -1004,6 +1059,13 @@ export async function bootstrap(): Promise<boolean> {
   }
 }
 
+/* Deliberately unpinned: this button exists to react within days (sometimes
+   hours) when YouTube breaks yt-dlp, so freezing it to a hashed pin would
+   defeat its purpose. Accepted supply-chain tradeoff — installs at bootstrap
+   go through the hash-verified lock; only this manual update path trusts
+   PyPI over TLS. Bump the pinned bootstrap version in
+   python/requirements.in whenever a fresh install should get a known-good
+   release. */
 export async function updateYtDlp(): Promise<boolean> {
   if (state.updating) return false
   state.updating = true

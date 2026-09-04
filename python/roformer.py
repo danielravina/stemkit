@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 import struct
@@ -12,6 +13,9 @@ import torch
 
 CKPT_NAME = "MelBandRoformer.ckpt"
 CKPT_URL = "https://huggingface.co/KimberleyJSN/melbandroformer/resolve/main/MelBandRoformer.ckpt"
+# pinned LFS sha256 of the checkpoint (HuggingFace repo metadata); downloads
+# are rejected unless they match, mirroring the check in src/main/env.ts
+CKPT_SHA256 = "87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e"
 
 # KimberleyJensen mel-band roformer vocal model (SDR vocals 10.98 on Multisong).
 # https://github.com/ZFTurbo/Music-Source-Separation-Training
@@ -91,6 +95,14 @@ def save_wav_f32(path, data, sr):
         f.write(payload)
 
 
+def sha256_of(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 22), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
 def download_checkpoint(dest):
     """download the checkpoint with resume support and progress emits"""
     if os.path.exists(dest):
@@ -130,6 +142,12 @@ def download_checkpoint(dest):
         fail(f"vocals engine download failed: {e}")
     if os.path.getsize(part) < MIN_CKPT_BYTES:
         fail(f"vocals engine download incomplete ({os.path.getsize(part)} bytes)")
+    if sha256_of(part) != CKPT_SHA256:
+        try:
+            os.remove(part)
+        except OSError:
+            pass
+        fail("vocals engine failed integrity check (sha256 mismatch)")
     os.replace(part, dest)
     emit(type="progress", stage="separate", pct=0, message="Vocals engine downloaded")
 

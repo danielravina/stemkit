@@ -1,0 +1,37 @@
+# Exact pins for the engine venv bootstrap (src/main/env.ts bootstrap()).
+# Versions mirror a known-good install; the lock file carries sha256 hashes
+# for every artifact so pip can't silently install something else.
+#
+# Regenerate the lock after changing a pin:
+#   uv pip compile python/requirements.in --universal --generate-hashes \
+#     -o python/requirements.lock
+demucs==4.0.1
+torch==2.5.1
+torchaudio==2.5.1
+numpy==1.26.4
+beartype==0.22.9
+rotary-embedding-torch==0.9.1
+einops==0.8.2
+yt-dlp==2026.8.19
+# transitives (pinned so the universal lock is fully deterministic)
+antlr4-python3-runtime==4.9.3
+cloudpickle==3.1.2
+dora_search==0.1.12
+filelock==3.32.5
+fsspec==2026.7.0
+Jinja2==3.1.6
+julius==0.2.8
+lameenc==1.8.4
+MarkupSafe==3.0.3
+mpmath==1.3.0
+networkx==3.4.2
+omegaconf==2.3.1
+openunmix==1.3.0
+packaging==26.3
+PyYAML==6.0.3
+retrying==1.4.2
+submitit==1.5.4
+sympy==1.13.1
+tqdm==4.70.0
+treetable==0.2.6
+typing_extensions==4.16.0

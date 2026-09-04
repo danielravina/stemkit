@@ -1,0 +1,8 @@
+# yt-dlp-ejs alone: installed in its own step (src/main/env.ts bootstrap()) so
+# a solver-install failure doesn't abort the engine bootstrap. yt-dlp's base
+# wheel vendors its network stack; this solver package has no deps of its own.
+#
+# Regenerate the lock after bumping the pin:
+#   uv pip compile python/requirements-ejs.in --universal --generate-hashes \
+#     -o python/requirements-ejs.lock
+yt-dlp-ejs==0.8.0
