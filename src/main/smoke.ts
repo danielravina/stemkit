@@ -14,6 +14,8 @@ import {
   bundledFfmpeg,
   ensureEngineDeps,
   ensureGpuEngine,
+  ensureVocalsEngine,
+  ensureFtWeights,
   detectNvidiaGpu
 } from './env'
 
@@ -188,6 +190,23 @@ export async function runSmoke(): Promise<boolean> {
       }
     }
 
+    // fine-tuned engine: exercises the direct, digest-verified htdemucs_ft
+    // downloads (torch-hub cache placement + full sha256 pins) on this
+    // platform — the old torch-hub path is gone, this replaces it
+    if (process.env.STEMKIT_SMOKE_SKIP_FT === '1') {
+      log('skipping fine-tuned engine download (STEMKIT_SMOKE_SKIP_FT=1)')
+    } else {
+      if (
+        !(await ensureFtWeights((pct) => {
+          if (pct % 25 === 0) log(`fine-tuned engine: ${pct}%`)
+        }))
+      ) {
+        log('FAIL: fine-tuned engine (htdemucs_ft) did not download/verify')
+        return false
+      }
+      log('fine-tuned engine verified in torch-hub cache')
+    }
+
     // roformer engine on CPU: validates the vendored model code, extra pip
     // deps and its own checkpoint downloader on this platform
     if (!(await ensureEngineDeps())) {
@@ -211,6 +230,18 @@ export async function runSmoke(): Promise<boolean> {
       return false
     }
     log('roformer vocals ok')
+
+    // the checkpoint roformer.py just downloaded must also pass the main
+    // process's once-per-session integrity check (913MB hash, no re-download)
+    if (
+      !(await ensureVocalsEngine((pct) => {
+        if (pct % 25 === 0) log(`vocals engine check: ${pct}%`)
+      }))
+    ) {
+      log('FAIL: vocals engine failed the main-process integrity check')
+      return false
+    }
+    log('vocals engine integrity check ok')
 
     // GPU plumbing on this GPU-less runner: --device cuda must fail fast
     // with the friendly message (on the default cpu torch, before any big
