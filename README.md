@@ -4,7 +4,7 @@ Split any YouTube song into isolated stems — **vocals, drums, bass, guitar, pi
 
 Search YouTube or paste a link, pick the instruments you want, and play the result like a mini DAW: the video on one side, every stem on its own fader, all perfectly in sync. Karaoke, acapellas and instrumentals are one click away.
 
-Everything runs locally — no accounts, no API keys. Your songs, searches and audio never leave your machine. The app sends one tiny anonymous ping per day (a random install id + version/OS) so I can count how many people use it — see [Privacy](#privacy) for details.
+Everything runs locally — no accounts, no API keys. Your songs, searches and audio never leave your machine. The app sends a single tiny anonymous ping per install (a random install id + version/OS) so I can count how many people use it — see [Privacy](#privacy) for details.
 
 ![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-black) ![local](https://img.shields.io/badge/100%25-local-emerald)
 
@@ -108,7 +108,7 @@ video iframe (muted) + Web Audio stem playback · master clock = the audio itsel
 ## Privacy
 
 - **Never leaves your machine:** the videos you download, the songs you split, your library, your searches and your audio — none of it is uploaded anywhere. All separation runs locally.
-- **Anonymous usage count:** on each launch the app sends one small POST to a Cloudflare Worker (`stemkit-stats.danielravina.workers.dev`) — at most once per day. It contains a **random install id** (generated locally, stored in the app's settings folder), the app version, OS and architecture. No IP-address-based profiles are built, no cookies, no identifiers tied to you, no analytics SDKs.
+- **Anonymous install count:** the first time the app runs it sends one small POST to a Cloudflare Worker (`stemkit-stats.danielravina.workers.dev`) — once per install, ever. It contains a **random install id** (generated locally, stored in the app's settings folder), the app version, OS and architecture. No IP-address-based profiles are built, no cookies, no identifiers tied to you, no analytics SDKs. If the first attempt fails (e.g. you're offline), it simply retries on a later launch.
 - **What it's for:** counting installs and active usage (the same stats you'd get from GitHub release downloads, minus auto-update noise). The counter code is in [`telemetry-worker/`](telemetry-worker) — inspectable like the rest of the app.
 - **Fully offline builds:** if you'd rather send nothing, build from source and remove `src/main/telemetry.ts` (or block the worker domain in your firewall) — everything else works identically offline.
 

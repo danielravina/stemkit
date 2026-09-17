@@ -4,19 +4,16 @@ import { join } from 'path'
 import { app, net } from 'electron'
 import { userDataDir } from './env'
 
-/* anonymous usage heartbeat: one small POST per install per day (first launch,
-   then once every 24h). Payload is a random install id plus version/os/arch —
-   nothing that identifies the machine or user. The endpoint is a Cloudflare
-   Worker (telemetry-worker/ in this repo); STEMKIT_TELEMETRY_URL overrides it
-   for testing without a rebuild. */
+/* anonymous install counter: one small POST per install, ever. Payload is a
+   random install id plus version/os/arch — nothing that identifies the
+   machine or user. The endpoint is a Cloudflare Worker (telemetry-worker/ in
+   this repo); STEMKIT_TELEMETRY_URL overrides it for testing. */
 const TELEMETRY_URL =
   (process.env.STEMKIT_TELEMETRY_URL || 'https://stemkit-stats.danielravina.workers.dev') + '/ping'
 
-const DAY_MS = 24 * 60 * 60 * 1000
-
 interface TelemetryState {
   installId: string
-  lastPing: number
+  done: boolean
 }
 
 function stateFile(): string {
@@ -27,10 +24,11 @@ function loadState(): TelemetryState {
   try {
     const data = JSON.parse(readFileSync(stateFile(), 'utf8'))
     if (typeof data.installId === 'string' && data.installId) {
-      return { installId: data.installId, lastPing: Number(data.lastPing) || 0 }
+      // 0.1.21 stored lastPing for its daily pings; a past ping counts as done
+      return { installId: data.installId, done: !!(data.done || data.lastPing) }
     }
   } catch {}
-  return { installId: randomUUID(), lastPing: 0 }
+  return { installId: randomUUID(), done: false }
 }
 
 function saveState(state: TelemetryState): void {
@@ -44,7 +42,7 @@ function saveState(state: TelemetryState): void {
 export function maybePing(): void {
   if (!app.isPackaged) return
   const state = loadState()
-  if (Date.now() - state.lastPing < DAY_MS) return
+  if (state.done) return
 
   const payload = JSON.stringify({
     id: state.installId,
@@ -59,11 +57,11 @@ export function maybePing(): void {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   })
-  // remember the ping only once the server confirmed it, so offline launches
-  // retry on the next open instead of silently dropping
+  // mark done only once the server confirmed it, so an offline first launch
+  // retries on the next open instead of never being counted
   req.on('response', (res) => {
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      saveState({ ...state, lastPing: Date.now() })
+      saveState({ ...state, done: true })
     }
   })
   req.on('error', () => {})

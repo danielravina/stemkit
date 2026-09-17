@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Live install stats from the telemetry worker.
+# Install stats from the telemetry worker (one ping per install, ever).
 # Token is read from STEMKIT_STATS_TOKEN, or from .stats-token next to this script.
 set -euo pipefail
 
@@ -23,17 +23,13 @@ import json, sys
 d = json.load(sys.stdin)
 daily = d.get("daily", [])
 total = d["totalInstalls"]
-dau = sum(x["active"] for x in daily[-1:])
-wau = max(x["active"] for x in daily[-7:]) if daily else 0
 
 print(f"total installs : {total}")
-print(f"active today   : {dau}")
-print(f"active (7d max): {wau}")
 print("per OS         :", ", ".join(f"{k} {v}" for k, v in d.get("os", {}).items()) or "-")
 print("per version    :", ", ".join(f"{k} {v}" for k, v in sorted(d.get("versions", {}).items())) or "-")
 print()
-print("last 14 days (date  active  new)")
+print("installs per day (last 14)")
 for x in daily[-14:]:
-    date, active, new = x["date"], x["active"], x["new"]
-    print(f"  {date}  {active:>6}  {new:>5}")
+    date, fresh = x["date"], x["new"]
+    print(f"  {date}  {fresh:>6}")
 '
