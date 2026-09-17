@@ -2,7 +2,6 @@ node_modules
 out
 release
 extras
-listening-list.md
 *.log
 .DS_Store
 
