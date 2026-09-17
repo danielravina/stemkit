@@ -30,6 +30,14 @@ import { maybePing } from './telemetry'
 let mainWindow: BrowserWindow | null = null
 let staticServer: Server | null = null
 
+// Ubuntu 24.04+ blocks unprivileged user namespaces, so Chromium falls back to
+// the SUID sandbox, which can never pass its root-ownership check inside a
+// read-only AppImage FUSE mount (issue #15). Only AppImage runs are affected —
+// deb installs install chrome-sandbox root-owned 4755 and keep the real sandbox.
+if (process.platform === 'linux' && process.env.APPIMAGE) {
+  app.commandLine.appendSwitch('no-sandbox')
+}
+
 const MIME: Record<string, string> = {
   '.html': 'text/html',
   '.js': 'text/javascript',
