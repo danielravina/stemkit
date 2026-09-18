@@ -40,10 +40,37 @@ elif [[ "$OS" == "Linux" ]]; then
   echo "downloading static ffmpeg for Linux ($JV_ARCH)..."
   TMP_TXZ="$ROOT/extras/ffmpeg-linux.tar.xz"
   TMP_DIR="$ROOT/extras/ffmpeg-linux-extract"
-  curl -fsSL -o "$TMP_TXZ" "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-${JV_ARCH}-static.tar.xz"
-  rm -rf "$TMP_DIR"
-  mkdir -p "$TMP_DIR"
-  tar -xJf "$TMP_TXZ" -C "$TMP_DIR"
+  # primary: johnvansickle (broadest glibc compatibility). fallback: BtbN git
+  # builds hosted on GitHub — johnvansickle is a personal server that
+  # rate-limits/stalls under CI load, which once shipped an HTML error page
+  # where the tarball should be (xz: File format not recognized)
+  if [[ "$JV_ARCH" == "amd64" ]]; then
+    URLS=(
+      "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+      "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz"
+    )
+  else
+    URLS=(
+      "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz"
+      "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linuxarm64-gpl.tar.xz"
+    )
+  fi
+  for url in "${URLS[@]}"; do
+    echo "trying $url ..."
+    rm -f "$TMP_TXZ"
+    # --max-time: a stalled host must fail over, not hang the CI job
+    if ! curl -fsSL --max-time 180 --retry 2 -o "$TMP_TXZ" "$url"; then
+      echo "download failed from $url"
+      continue
+    fi
+    rm -rf "$TMP_DIR"
+    mkdir -p "$TMP_DIR"
+    if tar -xJf "$TMP_TXZ" -C "$TMP_DIR" 2>/dev/null; then
+      echo "extracted ok from $url"
+      break
+    fi
+    echo "archive from $url is not a valid xz tarball"
+  done
   BIN="$(find "$TMP_DIR" -name ffmpeg -type f | head -1)"
   if [[ -z "$BIN" ]]; then
     echo "ffmpeg binary not found inside archive"
