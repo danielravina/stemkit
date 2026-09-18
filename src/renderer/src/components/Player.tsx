@@ -3,7 +3,7 @@ import type { AppSettings, Song, StemId } from '../../../shared/types'
 import { engine, decodePayload, type BufferMap } from '../lib/engine'
 import { buildStemMeta } from '../lib/stems'
 import { fmtTime } from '../lib/format'
-import { Thumb } from '../lib/thumbs'
+import { SongThumb } from '../lib/thumbs'
 import { YouTubeHost, type YTState } from '../lib/youtube'
 import { StemLane } from './StemLane'
 import { Transport, type PresetId } from './Transport'
@@ -59,10 +59,13 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
   const stemMeta = useMemo(() => buildStemMeta(Object.keys(buffers) as StemId[]), [buffers])
 
-  const youtubeUrl = `https://www.youtube.com/watch?v=${song.videoId}`
+  // local files have no video to sync: the player runs audio-only, with a
+  // placeholder panel where the YouTube iframe would be
+  const isLocal = song.source === 'local'
+  const youtubeUrl = isLocal ? null : `https://www.youtube.com/watch?v=${song.videoId}`
   // stems always play locally from the library; hiding the video just stops
   // streaming it from YouTube (and switches thumbnails to the local cache)
-  const hideVideo = settings?.hideVideo ?? false
+  const showVideo = !(settings?.hideVideo ?? false) && !isLocal
   const addedLabel = new Date(song.addedAt).toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
@@ -111,7 +114,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
   }, [song.videoId])
 
   useEffect(() => {
-    if (hideVideo) {
+    if (!showVideo) {
       hostRef.current?.destroy()
       hostRef.current = null
       setYtReady(false)
@@ -141,7 +144,10 @@ export function Player({ song, settings }: Props): React.ReactElement {
     return () => {
       disposed = true
     }
-  }, [song.videoId, decoding, decodeError, hideVideo])
+    return () => {
+      disposed = true
+    }
+  }, [song.videoId, decoding, decodeError, showVideo])
 
   useEffect(() => {
     engine.applyMix(vols, mutes, solos, master)
@@ -209,7 +215,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
       hostRef.current?.play()
       setPlaying(true)
     }
-  }, [decoding, decodeError, hideVideo])
+  }, [decoding, decodeError, showVideo])
 
   const seekTo = useCallback(
     (t: number): void => {
@@ -305,7 +311,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
       <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6">
         <div className="max-w-6xl mx-auto">
           <div className="flex items-stretch gap-4 h-[220px]">
-            {!hideVideo && (
+            {showVideo && (
               <div className="relative w-[391px] shrink-0">
                 <div className="absolute -inset-4 bg-violet-500/10 blur-3xl rounded-full pointer-events-none" />
                 <div className="absolute inset-0 rounded-xl overflow-hidden ring-1 ring-white/10 bg-black shadow-2xl shadow-black/60">
@@ -328,9 +334,10 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
             <aside className="flex-1 min-w-0 glass rounded-2xl px-6 py-5 rise-in flex flex-col justify-between">
               <div className="flex items-center gap-4">
-                <Thumb
+                <SongThumb
                   videoId={song.videoId}
                   className="w-32 h-[72px] rounded-lg object-cover bg-white/5 shrink-0 block"
+                  iconClassName="w-7 h-7 text-white/25"
                 />
                 <div className="min-w-0 flex-1">
                   <h3 className="text-xl font-semibold leading-snug truncate">{song.title}</h3>
@@ -344,7 +351,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
                 </span>
               </div>
 
-              {hideVideo && decodeError && (
+              {!showVideo && decodeError && (
                 <div className="rounded-xl bg-rose-500/10 border border-rose-400/20 px-3 py-2 text-xs text-rose-200 break-words">
                   {decodeError}
                 </div>
@@ -368,12 +375,14 @@ export function Player({ song, settings }: Props): React.ReactElement {
                   <DownloadIcon className="w-4 h-4" />
                   Export everything
                 </button>
-                <button
-                  onClick={() => window.stemkit.openExternal(youtubeUrl)}
-                  className="no-drag glass rounded-xl px-5 py-3 text-[13px] font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-                >
-                  Open on YouTube
-                </button>
+                {youtubeUrl && (
+                  <button
+                    onClick={() => window.stemkit.openExternal(youtubeUrl)}
+                    className="no-drag glass rounded-xl px-5 py-3 text-[13px] font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                  >
+                    Open on YouTube
+                  </button>
+                )}
               </div>
             </aside>
           </div>
@@ -388,7 +397,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
             onPreset={applyPreset}
             master={master}
             onMaster={setMaster}
-            youtubeUrl={youtubeUrl}
+            youtubeUrl={youtubeUrl ?? undefined}
           />
 
           <div className="mt-4 space-y-2">

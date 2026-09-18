@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AppSettings, EnvStatus, JobProgress, JobStage, Song, UpdateEvent } from '../../shared/types'
 import { MODEL_DEFAULT } from '../../shared/types'
 import { parseVideoId } from '../../shared/url'
+import { localSongId, isLocalId } from '../../shared/local'
 import { Sidebar } from './components/Sidebar'
 import { Home } from './components/Home'
 import { Processing } from './components/Processing'
@@ -14,6 +15,11 @@ interface EnvLog {
   message: string
   level: string
 }
+
+// what the retry button re-runs: the original url or the picked local file
+type LastStart =
+  | { kind: 'url'; url: string; model: string }
+  | { kind: 'local'; filePath: string; model: string }
 
 function stageLabel(stage: JobStage, pct: number): string {
   switch (stage) {
@@ -41,8 +47,7 @@ export default function App(): React.ReactElement {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [jobs, setJobs] = useState<Record<string, JobProgress>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [lastUrl, setLastUrl] = useState('')
-  const [lastModel, setLastModel] = useState(MODEL_DEFAULT)
+  const [lastStart, setLastStart] = useState<LastStart | null>(null)
   const [envLogs, setEnvLogs] = useState<EnvLog[]>([])
   const [update, setUpdate] = useState<UpdateEvent | null>(null)
   const [appVersion, setAppVersion] = useState<string | undefined>(undefined)
@@ -93,8 +98,7 @@ export default function App(): React.ReactElement {
       const vid = parseVideoId(url)
       if (!vid) return
       setActiveId(vid)
-      setLastUrl(url)
-      setLastModel(model)
+      setLastStart({ kind: 'url', url, model })
       setErrors((prev) => withoutKey(prev, vid))
       setJobs((prev) =>
         prev[vid]
@@ -102,6 +106,22 @@ export default function App(): React.ReactElement {
           : { ...prev, [vid]: { videoId: vid, stage: 'metadata', pct: 0, message: 'Starting…', model } }
       )
       await window.stemkit.startJob(url, model, stems)
+    },
+    []
+  )
+
+  const startLocal = useCallback(
+    async (filePath: string, model: string = MODEL_DEFAULT, stems?: string[]): Promise<void> => {
+      const id = localSongId(filePath)
+      setActiveId(id)
+      setLastStart({ kind: 'local', filePath, model })
+      setErrors((prev) => withoutKey(prev, id))
+      setJobs((prev) =>
+        prev[id]
+          ? prev
+          : { ...prev, [id]: { videoId: id, stage: 'convert', pct: 0, message: 'Starting…', model } }
+      )
+      await window.stemkit.startLocalJob(filePath, model, stems)
     },
     []
   )
@@ -115,13 +135,15 @@ export default function App(): React.ReactElement {
   )
 
   const retryJob = useCallback((): void => {
-    if (lastUrl) void startUrl(lastUrl, lastModel)
-  }, [lastUrl, lastModel, startUrl])
+    if (!lastStart) return
+    if (lastStart.kind === 'url') void startUrl(lastStart.url, lastStart.model)
+    else void startLocal(lastStart.filePath, lastStart.model)
+  }, [lastStart, startUrl, startLocal])
 
   const updateYtDlp = useCallback(async (): Promise<void> => {
     await window.stemkit.envUpdateYtDlp()
-    if (lastUrl) void startUrl(lastUrl, lastModel)
-  }, [lastUrl, lastModel, startUrl])
+    if (lastStart?.kind === 'url') void startUrl(lastStart.url, lastStart.model)
+  }, [lastStart, startUrl])
 
   const deleteSong = useCallback(
     async (videoId: string): Promise<void> => {
@@ -213,6 +235,7 @@ export default function App(): React.ReactElement {
       <Processing
         job={selectedJob}
         error={selectedError}
+        isLocal={activeId ? isLocalId(activeId) : false}
         botSuspected={
           !!selectedError && /sign in|bot|confirm|unavailable|private/i.test(selectedError)
         }
@@ -231,6 +254,7 @@ export default function App(): React.ReactElement {
         pending={pendingMap}
         settings={settings ?? undefined}
         onStart={(u, m, s) => void startUrl(u, m, s)}
+        onStartLocal={(path, m, s) => void startLocal(path, m, s)}
         onSelect={(id) => setActiveId(id)}
         onOpenSettings={() => {
           void window.stemkit.envStatus().then(setStatus)

@@ -21,7 +21,8 @@ interface Props {
   onPreset: (p: PresetId) => void
   master: number
   onMaster: (v: number) => void
-  youtubeUrl: string
+  // local-file songs have no video to link out to
+  youtubeUrl?: string
 }
 
 function SeekBar({
@@ -156,13 +157,15 @@ export function Transport({
           />
         </div>
 
-        <button
-          onClick={() => window.stemkit.openExternal(youtubeUrl)}
-          title="Open on YouTube"
-          className="no-drag text-white/40 hover:text-white transition-colors"
-        >
-          <ExternalIcon />
-        </button>
+        {youtubeUrl && (
+          <button
+            onClick={() => window.stemkit.openExternal(youtubeUrl)}
+            title="Open on YouTube"
+            className="no-drag text-white/40 hover:text-white transition-colors"
+          >
+            <ExternalIcon />
+          </button>
+        )}
       </div>
     </div>
   )

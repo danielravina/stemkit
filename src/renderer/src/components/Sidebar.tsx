@@ -1,6 +1,6 @@
 import type { Song } from '../../../shared/types'
 import { fmtTime } from '../lib/format'
-import { Thumb } from '../lib/thumbs'
+import { SongThumb } from '../lib/thumbs'
 import { LogoMark, TrashIcon, PlusIcon, GearIcon } from './Icons'
 
 interface Props {
@@ -77,9 +77,10 @@ export function Sidebar({
               }`}
             >
               <span className="relative shrink-0">
-                <Thumb
+                <SongThumb
                   videoId={song.videoId}
                   className={`w-12 h-[27px] rounded-md object-cover bg-white/5 block ${working ? 'opacity-70' : ''}`}
+                  iconClassName="w-3.5 h-3.5 text-white/25"
                 />
                 {working && (
                   <span className="absolute inset-0 flex items-center justify-center">

@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { isLocalId } from '../../../shared/local'
+import { SpeakerIcon } from '../components/Icons'
 
 // library thumbnails resolve through the local cache in the main process
 // (userData/thumbs). Setting changes re-resolve: hideVideo on/off changes
@@ -65,4 +67,25 @@ export function Thumb({ videoId, className }: { videoId: string; className: stri
   const src = useThumb(videoId)
   if (!src) return <span className={className} />
   return <img src={src} alt="" className={className} draggable={false} />
+}
+
+// song artwork slot: YouTube ids resolve through the thumbnail cache, local
+// files get a speaker badge (there is nothing to fetch for them)
+export function SongThumb({
+  videoId,
+  className,
+  iconClassName = 'w-1/2 h-1/2 text-white/25'
+}: {
+  videoId: string
+  className: string
+  iconClassName?: string
+}): React.ReactElement {
+  if (isLocalId(videoId)) {
+    return (
+      <span className={`${className} flex items-center justify-center`}>
+        <SpeakerIcon className={iconClassName} />
+      </span>
+    )
+  }
+  return <Thumb videoId={videoId} className={className} />
 }

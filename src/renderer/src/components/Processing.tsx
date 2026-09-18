@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { JobProgress } from '../../../shared/types'
 import { fmtTime } from '../lib/format'
-import { Thumb } from '../lib/thumbs'
+import { SongThumb } from '../lib/thumbs'
 import { XIcon } from './Icons'
 
 const STAGES: { id: JobProgress['stage']; label: string }[] = [
@@ -18,6 +18,8 @@ const stageOrder = (stage: JobProgress['stage'] | undefined): number =>
 interface Props {
   job: JobProgress | null
   error: string | null
+  // local-file jobs have no metadata/download stages and no yt-dlp to update
+  isLocal?: boolean
   botSuspected: boolean
   onCancel: () => void
   onRetry: () => void
@@ -27,12 +29,14 @@ interface Props {
 export function Processing({
   job,
   error,
+  isLocal = false,
   botSuspected,
   onCancel,
   onRetry,
   onUpdateYtDlp
 }: Props): React.ReactElement {
-  const stageIndex = job ? STAGES.findIndex((s) => s.id === job.stage) : -1
+  const stages = isLocal ? STAGES.filter((s) => s.id !== 'metadata' && s.id !== 'download') : STAGES
+  const stageIndex = job ? stages.findIndex((s) => s.id === job.stage) : -1
 
   const [timing, setTiming] = useState<{ elapsed: number; left: number | null } | null>(null)
   const jobRef = useRef(job)
@@ -79,9 +83,10 @@ export function Processing({
       <div className="w-full max-w-md glass rounded-2xl p-7 rise-in">
         <div className="flex items-center gap-3.5">
           {job?.videoId ? (
-            <Thumb
+            <SongThumb
               videoId={job.videoId}
               className="w-16 h-9 rounded-lg object-cover bg-white/5 block"
+              iconClassName="w-4 h-4 text-white/25"
             />
           ) : (
             <span className="w-10 h-10 rounded-full border-2 border-white/20 border-t-violet-300 animate-spin" />
@@ -95,7 +100,7 @@ export function Processing({
         </div>
 
         <div className="mt-6 space-y-3.5">
-          {STAGES.map((stage, i) => {
+          {stages.map((stage, i) => {
             const done = !error && i < stageIndex
             const active = !error && i === stageIndex
             const pct = active && job ? job.pct : done ? 100 : 0
@@ -141,7 +146,7 @@ export function Processing({
               {error}
             </div>
             <div className="mt-4 flex gap-2 justify-end">
-              {botSuspected && (
+              {botSuspected && !isLocal && (
                 <button
                   onClick={onUpdateYtDlp}
                   className="px-4 py-2 rounded-lg glass text-[13px] hover:bg-white/10 transition-colors"

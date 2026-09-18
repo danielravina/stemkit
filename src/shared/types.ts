@@ -14,6 +14,8 @@ export interface Song {
   model?: string
   stems?: string[]
   took?: number
+  // local audio files carry their own mix; absent means a YouTube source
+  source?: 'local'
 }
 
 export interface AppSettings {
@@ -113,6 +115,8 @@ export interface StemKitApi {
   exportAllStems(videoId: string): Promise<{ saved: boolean; path?: string; count?: number }>
   searchYouTube(query: string): Promise<SearchResult[]>
   startJob(url: string, model?: string, stems?: string[]): Promise<{ started: boolean }>
+  pickAudioFile(): Promise<string | null>
+  startLocalJob(filePath: string, model?: string, stems?: string[]): Promise<{ started: boolean }>
   cancelJob(videoId?: string): Promise<void>
   openExternal(url: string): Promise<void>
   getAppVersion(): Promise<string>

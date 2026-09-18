@@ -11,7 +11,7 @@ import {
 import { parseVideoId } from '../../../shared/url'
 import { STEM_INFO, PREFERRED_ORDER } from '../lib/stems'
 import { fmtTime } from '../lib/format'
-import { GearIcon } from './Icons'
+import { GearIcon, FolderIcon } from './Icons'
 
 interface Props {
   hasSongs: boolean
@@ -19,6 +19,7 @@ interface Props {
   pending?: Record<string, { label: string; error?: boolean }>
   settings?: AppSettings
   onStart: (url: string, model: string, stems?: string[]) => void
+  onStartLocal: (filePath: string, model: string, stems?: string[]) => void
   onSelect: (videoId: string) => void
   onOpenSettings: () => void
 }
@@ -31,6 +32,7 @@ export function Home({
   pending = {},
   settings,
   onStart,
+  onStartLocal,
   onSelect,
   onOpenSettings
 }: Props): React.ReactElement {
@@ -146,14 +148,20 @@ export function Home({
     startWithSelection(r.videoId)
   }
 
+  const pickAndStart = async (): Promise<void> => {
+    if (selected.size === 0) return
+    const filePath = await window.stemkit.pickAudioFile()
+    if (filePath) onStartLocal(filePath, derivedModel, orderedSelection)
+  }
+
   return (
     <div className="h-full flex flex-col items-center px-8 pt-[8vh] pb-6 overflow-y-auto">
       <div className="w-full max-w-2xl">
         <h1 className="text-center text-[30px] font-bold tracking-tight leading-tight bg-gradient-to-r from-violet-300 via-white to-emerald-200 bg-clip-text text-transparent">
-          Turn any YouTube track into stems.
+          Turn any track into stems.
         </h1>
         <p className="text-center text-white/45 mt-2.5 text-[14px]">
-          Search YouTube or paste a link — separated locally, synced to the video.
+          Search YouTube, paste a link, or split an audio file from your computer — separated locally.
         </p>
 
         <div className="mt-6 flex gap-2">
@@ -166,6 +174,14 @@ export function Home({
             spellCheck={false}
             className="no-drag flex-1 glass rounded-xl px-4 py-3 text-sm outline-none placeholder:text-white/25 focus:ring-2 focus:ring-violet-400/60 transition-shadow"
           />
+          <button
+            onClick={() => void pickAndStart()}
+            disabled={selected.size === 0}
+            title="Split a local audio file (mp3, wav, flac…)"
+            className="no-drag glass rounded-xl w-[52px] flex items-center justify-center text-white/45 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40"
+          >
+            <FolderIcon className="w-[18px] h-[18px] pointer-events-none" />
+          </button>
           <button
             onClick={submit}
             disabled={!query.trim() || selected.size === 0}
