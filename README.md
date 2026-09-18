@@ -21,7 +21,7 @@ Everything runs locally — no accounts, no API keys. Your songs, searches and a
 - Per-stem mute/solo/volume, waveforms with click-to-seek
 - Parallel background splitting with live progress
 - Export any stem (or all) as WAV
-- Fully offline after setup — separation runs on Apple Silicon (MPS), NVIDIA GPUs (CUDA) or CPU; ffmpeg included
+- Fully offline after setup — separation runs on Apple Silicon (MPS), NVIDIA GPUs (CUDA), AMD GPUs on Linux (ROCm, experimental) or CPU; ffmpeg included
 
 ## Download
 
@@ -43,7 +43,7 @@ Optional quality upgrades live behind a gear icon in the app (Settings), each wi
 
 ## Requirements
 
-- **macOS 12+** (Apple Silicon) or **Windows 10/11** (x64) or **Linux x64** (Ubuntu 22.04+ or equivalent; NVIDIA driver for GPU splits)
+- **macOS 12+** (Apple Silicon) or **Windows 10/11** (x64) or **Linux x64** (Ubuntu 22.04+ or equivalent; NVIDIA driver for GPU splits, AMD via ROCm on Linux — experimental)
 - No manual installs: if no Python 3.9+ is detected, StemKit downloads a private runtime (python-build-standalone) during first-launch setup
 - Node.js 20+ only for building from source
 

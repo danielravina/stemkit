@@ -1,5 +1,9 @@
 export type StemId = 'vocals' | 'drums' | 'bass' | 'other' | 'piano' | 'guitar'
 
+// which GPU vendor GPU acceleration targets: NVIDIA via CUDA torch (windows
+// + linux), AMD via ROCm torch (linux only)
+export type GpuVendor = 'nvidia' | 'amd'
+
 export const DEFAULT_STEMS: string[] = ['vocals', 'drums', 'bass', 'other']
 
 // roformer_hybrid = mel-band roformer vocals + htdemucs drums/bass/other
@@ -22,9 +26,10 @@ export interface AppSettings {
   shifts: 1 | 2
   htdemucsFt: boolean
   roformerVocals: boolean
-  // windows/linux + nvidia: separate on the GPU instead of the CPU. The toggle is
-  // only rendered when an NVIDIA GPU is detected; enabling it downloads the
-  // CUDA build of torch (~2.5GB) on first use
+  // windows/linux: separate on the GPU instead of the CPU. The toggle is only
+  // rendered when an NVIDIA GPU (cuda torch) or an AMD GPU on linux (rocm
+  // torch) is detected; enabling it downloads the ~2.5GB GPU build of torch
+  // on first use
   gpuSplit: boolean
   // hide the YouTube video while playing: stems are always played locally,
   // this stops streaming the video and falls back to cached thumbnails
@@ -44,7 +49,7 @@ export interface EngineStatus {
   vocalsReady: boolean
   ftDownloading: boolean
   ftVerified: boolean
-  // cuda torch engine (windows/linux + nvidia only)
+  // gpu torch engine (windows/linux; cuda for nvidia, rocm for amd on linux)
   gpuDownloading: boolean
   gpuReady: boolean
 }
@@ -56,8 +61,9 @@ export interface EnvStatus {
   bootstrapping: boolean
   updating: boolean
   gpu?: boolean
-  // windows/linux only: an NVIDIA GPU was detected (gates the GPU toggle in Settings)
-  nvidiaGpu?: boolean
+  // windows/linux only: which GPU vendor was detected (gates the GPU toggle
+  // in Settings; amd is only detected on linux)
+  gpuVendor?: GpuVendor
 }
 
 export interface EnvEvent {

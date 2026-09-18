@@ -13,6 +13,7 @@ import {
   ensureVocalsEngine,
   ensureFtWeights,
   ensureGpuEngine,
+  detectGpuVendor,
   getStatus,
   ytDlpRuntimeArgs
 } from './env'
@@ -395,13 +396,13 @@ async function runSeparation(
   const release = await acquireSeparation()
   try {
     if (job.cancelled || !jobs.has(videoId)) throw new Error('cancelled')
-    // self-heal the GPU engine: the toggle may be on before the CUDA torch
+    // self-heal the GPU engine: the toggle may be on before the GPU torch
     // download has run (fresh setting, or a failed earlier attempt)
     if (useGpu) {
       if (
         !(await ensureGpuEngine(
           (pct) => progress(job, 'separate', 0, `Downloading GPU engine: ${pct}%`),
-          true
+          await detectGpuVendor()
         ))
       ) {
         bail('Could not prepare the GPU engine — switch back to CPU in Settings and try again')

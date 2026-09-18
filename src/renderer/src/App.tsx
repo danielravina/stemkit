@@ -286,7 +286,7 @@ export default function App(): React.ReactElement {
         <Settings
           settings={settings}
           gpu={status.gpu}
-          nvidiaGpu={status.nvidiaGpu}
+          gpuVendor={status.gpuVendor}
           onChange={(patch) => void window.stemkit.setSettings(patch)}
           onClose={() => setSettingsOpen(false)}
         />

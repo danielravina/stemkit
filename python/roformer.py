@@ -224,7 +224,7 @@ def main():
 
     # fail fast before the ~913MB checkpoint download on GPU-less machines
     if args.device == "cuda" and not torch.cuda.is_available():
-        fail("GPU engine not available (no NVIDIA GPU, or the CUDA build of torch is not installed)")
+        fail("GPU engine not available (no supported NVIDIA/AMD GPU, or the GPU build of torch is not installed)")
 
     ckpt_path = os.path.join(args.ckpt_dir, CKPT_NAME)
     if not os.path.exists(ckpt_path):

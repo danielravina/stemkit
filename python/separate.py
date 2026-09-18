@@ -124,7 +124,7 @@ def main():
     else:
         device = args.device
     if device == "cuda" and not torch.cuda.is_available():
-        fail("GPU engine not available (no NVIDIA GPU, or the CUDA build of torch is not installed)")
+        fail("GPU engine not available (no supported NVIDIA/AMD GPU, or the GPU build of torch is not installed)")
     emit(type="progress", stage="model", pct=0, message=f"loading {args.model} on {device}")
 
     from demucs.apply import apply_model

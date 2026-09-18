@@ -12,8 +12,9 @@ import {
   ensureVocalsEngine,
   ensureFtWeights,
   ensureGpuEngine,
-  detectNvidiaGpu,
-  nvidiaGpuInfo,
+  detectGpuVendor,
+  gpuVendorInfo,
+  applyGpuOverride,
   hasGpuAcceleration,
   gpuAccelerationInfo,
   engineStatus,
@@ -134,18 +135,21 @@ app.whenReady().then(async () => {
     const settings = loadSettings()
     if (settings.roformerVocals) void ensureVocalsEngine()
     if (settings.htdemucsFt) void ensureFtWeights()
-    if (settings.gpuSplit) void ensureGpuEngine(undefined, true)
+    if (settings.gpuSplit) void detectGpuVendor().then((vendor) => ensureGpuEngine(undefined, vendor))
     // warm the informational GPU probe so Settings can show it right away
     void hasGpuAcceleration()
   }
 
   ipcMain.handle('env:status', async () => {
-    await detectTools()
-    void detectNvidiaGpu()
+  // restore the AMD ROCm override saved by a previous session's preflight
+  // before any python (venv probes, separation runs) can spawn
+  applyGpuOverride()
+  await detectTools()
+    void detectGpuVendor()
     const status = {
       ...getStatus(),
       gpu: gpuAccelerationInfo(),
-      nvidiaGpu: nvidiaGpuInfo()
+      gpuVendor: gpuVendorInfo()
     }
     // the probe results land on a later status call; never blocks ready
     if (status.ready) void hasGpuAcceleration()

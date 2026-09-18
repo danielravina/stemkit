@@ -14,7 +14,8 @@ import {
   bundledFfmpeg,
   ensureEngineDeps,
   ensureGpuEngine,
-  detectNvidiaGpu
+  detectNvidiaGpu,
+  detectAmdGpu
 } from './env'
 
 /* self-test mode, driven by STEMKIT_SMOKE=1 (used by the windows-smoke CI
@@ -216,12 +217,14 @@ export async function runSmoke(): Promise<boolean> {
     log('roformer vocals ok')
 
     // GPU plumbing: --device cuda must fail fast with the friendly message
-    // on the default cpu torch (before any big downloads). After the CUDA
+    // on the default cpu torch (before any big downloads). After the GPU
     // wheel swap, a GPU-less runner expects torch.cuda.is_available() to
     // stay false, while an NVIDIA machine runs real cuda separations
     // through both engines
     const nvidia = await detectNvidiaGpu()
     log(`nvidia gpu detected: ${nvidia}`)
+    const amd = await detectAmdGpu()
+    log(`amd gpu detected: ${amd}`)
 
     if (
       !(await expectCudaFailure('cuda on cpu torch', [
@@ -238,7 +241,10 @@ export async function runSmoke(): Promise<boolean> {
     if (process.env.STEMKIT_SMOKE_SKIP_GPU === '1') {
       log('skipping GPU engine install (STEMKIT_SMOKE_SKIP_GPU=1)')
     } else {
-      if (!(await ensureGpuEngine((pct) => log(`gpu engine install: ${pct}%`)))) {
+      // force the CUDA wheel swap even without a detected NVIDIA card: the
+      // GPU-less runner assertion below expects torch.version.cuda to be set
+      // while cuda.is_available() stays false
+      if (!(await ensureGpuEngine((pct) => log(`gpu engine install: ${pct}%`), 'nvidia', true))) {
         log('FAIL: GPU engine (cuda torch) did not install')
         return false
       }

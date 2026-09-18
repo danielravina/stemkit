@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import type { AppSettings, EngineStatus } from '../../../shared/types'
+import type { AppSettings, EngineStatus, GpuVendor } from '../../../shared/types'
 import { XIcon } from './Icons'
 
 interface Props {
   settings: AppSettings
   gpu?: boolean
-  nvidiaGpu?: boolean
+  gpuVendor?: GpuVendor
   onChange: (patch: Partial<AppSettings>) => void
   onClose: () => void
 }
@@ -108,7 +108,7 @@ function SectionHeader({ label }: { label: string }): React.ReactElement {
   )
 }
 
-export function Settings({ settings, gpu, nvidiaGpu, onChange, onClose }: Props): React.ReactElement {
+export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props): React.ReactElement {
   const [engines, setEngines] = useState<EngineStatus | null>(null)
   const [vocalsPct, setVocalsPct] = useState<number | null>(null)
   const [ftPct, setFtPct] = useState<number | null>(null)
@@ -181,7 +181,7 @@ export function Settings({ settings, gpu, nvidiaGpu, onChange, onClose }: Props)
   const gpuLine =
     gpu === true
       ? 'Uses your GPU — fast'
-      : gpu === false && nvidiaGpu
+      : gpu === false && gpuVendor
         ? 'Running on CPU — enable GPU acceleration below for much faster splits'
         : gpu === false
           ? 'No GPU found — expect ~20-35 min per song on CPU'
@@ -194,7 +194,7 @@ export function Settings({ settings, gpu, nvidiaGpu, onChange, onClose }: Props)
     !!engines && settings.roformerVocals && !engines.vocalsReady && !vocalsBusy
   const showFtConfirm = !!engines && settings.htdemucsFt && !engines.ftVerified && !ftBusy
   const showGpuConfirm =
-    !!engines && settings.gpuSplit && nvidiaGpu && !engines.gpuReady && !gpuBusy
+    !!engines && settings.gpuSplit && !!gpuVendor && !engines.gpuReady && !gpuBusy
 
   const startVocals = (): void => {
     setVocalsStarting(true)
@@ -260,12 +260,14 @@ export function Settings({ settings, gpu, nvidiaGpu, onChange, onClose }: Props)
               />
             </div>
 
-            {nvidiaGpu && (
+            {gpuVendor && (
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-[13px] font-medium">GPU acceleration</p>
                   <p className="text-[11.5px] text-white/40 leading-relaxed mt-0.5">
-                    Use your NVIDIA GPU for much faster splits.
+                    {gpuVendor === 'amd'
+                      ? 'Use your AMD GPU for much faster splits. Experimental — depends on your hardware.'
+                      : 'Use your NVIDIA GPU for much faster splits.'}
                   </p>
                   <DownloadBar pct={gpuPct} starting={gpuBusy && gpuPct === null} error={gpuError} />
                   {showGpuConfirm && (
