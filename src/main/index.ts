@@ -20,8 +20,8 @@ import {
   getStatus
 } from './env'
 import { loadSettings, saveSettings } from './settings'
-import { loadSongs, removeSong, stemBuffers, stemsDir, stemsFor, mixWavPath } from './library'
-import { startJob, cancelJob, searchYouTube } from './pipeline'
+import { loadSongs, removeSong, stemBuffers, stemsDir, stemsFor, mixWavPath, AUDIO_EXTENSIONS } from './library'
+import { startJob, startLocalJob, cancelJob, searchYouTube } from './pipeline'
 import { initUpdater } from './updater'
 import { runSmoke } from './smoke'
 import { getThumb, clearThumbMemo } from './thumbs'
@@ -29,14 +29,6 @@ import { maybePing } from './telemetry'
 
 let mainWindow: BrowserWindow | null = null
 let staticServer: Server | null = null
-
-// Ubuntu 24.04+ blocks unprivileged user namespaces, so Chromium falls back to
-// the SUID sandbox, which can never pass its root-ownership check inside a
-// read-only AppImage FUSE mount (issue #15). Only AppImage runs are affected —
-// deb installs install chrome-sandbox root-owned 4755 and keep the real sandbox.
-if (process.platform === 'linux' && process.env.APPIMAGE) {
-  app.commandLine.appendSwitch('no-sandbox')
-}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html',
@@ -177,6 +169,20 @@ app.whenReady().then(async () => {
   ipcMain.handle('jobs:start', async (_e, url: string, model?: string, stems?: string[]) => {
     void startJob(url, model, stems)
     return { started: true }
+  })
+  ipcMain.handle('jobs:start-local', async (_e, filePath: string, model?: string, stems?: string[]) => {
+    void startLocalJob(filePath, model, stems)
+    return { started: true }
+  })
+  ipcMain.handle('files:pick-audio', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose an audio file to split',
+      buttonLabel: 'Split',
+      properties: ['openFile'],
+      filters: [{ name: 'Audio files', extensions: AUDIO_EXTENSIONS }]
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return result.filePaths[0]
   })
   ipcMain.handle('jobs:cancel', (_e, videoId?: string) => cancelJob(videoId))
 

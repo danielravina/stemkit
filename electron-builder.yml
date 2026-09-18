@@ -1,5 +1,6 @@
 appId: com.stemkit.app
 productName: StemKit
+afterPack: scripts/after-pack.cjs
 directories:
   output: release
 files:
