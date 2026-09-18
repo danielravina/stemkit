@@ -454,19 +454,22 @@ export async function detectTools(): Promise<void> {
     state.python = { found: true, path: best.path, version: best.version }
   }
 
+  // probe the bundled ffmpeg just like system candidates: a bundled binary
+  // that can't execute on this machine (e.g. a stale x86_64 build on an
+  // Apple Silicon Mac without Rosetta — exec fails with errno -86) must
+  // fall through to a system install instead of blowing up mid-job
+  const ffProbes: string[] = []
   const bundled = bundledFfmpeg()
-  if (bundled) {
-    state.ffmpeg = { found: true, path: bundled }
-  } else {
-    for (const candidate of ffCandidates()) {
-      if (!existsSync(candidate)) continue
-      try {
-        await runCapture(candidate, ['-version'])
-        state.ffmpeg = { found: true, path: candidate }
-        break
-      } catch {
-        continue
-      }
+  if (bundled) ffProbes.push(bundled)
+  ffProbes.push(...ffCandidates())
+  for (const candidate of ffProbes) {
+    if (!existsSync(candidate)) continue
+    try {
+      await runCapture(candidate, ['-version'])
+      state.ffmpeg = { found: true, path: candidate }
+      break
+    } catch {
+      continue
     }
   }
 

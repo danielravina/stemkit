@@ -597,6 +597,19 @@ async function runSeparation(
     }
 }
 
+/* macOS errno -86 (EBADARCH, "Bad CPU type in executable"): a spawned tool
+   cannot run on this CPU — historically the x86_64 ffmpeg that older builds
+   bundled for Apple Silicon Macs without Rosetta. Say that, not "Unknown
+   system error -86" */
+function friendlySpawnError(err: NodeJS.ErrnoException): Error {
+  if (err.errno === -86 || /Unknown system error -86/.test(err.message ?? '')) {
+    return new Error(
+      "StemKit's built-in audio tools don't work on this Mac — update StemKit to the latest version"
+    )
+  }
+  return err
+}
+
 function runProcess(
   job: ActiveJob,
   cmd: string,
@@ -625,7 +638,7 @@ function runProcess(
       rl.on('line', (line) => opts.onLine?.(line))
     }
 
-    child.on('error', reject)
+    child.on('error', (err) => reject(friendlySpawnError(err)))
     child.on('close', (code) => {
       if (job.cancelled || !jobs.has(job.videoId)) return reject(new Error('cancelled'))
       if (code === 0) return resolve()
