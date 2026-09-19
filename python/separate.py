@@ -17,6 +17,18 @@ def fail(message):
     sys.exit(1)
 
 
+def crash_message(e):
+    """top-level crash handler text: unreadable stderr tails (a bare python
+    traceback or an unrelated warnings.warn line) become actionable errors"""
+    msg = f"{e}"
+    if "no kernel image" in msg.lower():
+        return (
+            "GPU engine incompatible with this GPU (compute capability not supported by the "
+            "installed engine) — update StemKit or turn off GPU acceleration in Settings"
+        )
+    return msg[:400] or e.__class__.__name__
+
+
 def load_wav(path):
     try:
         with wave.open(path, "rb") as w:
@@ -66,6 +78,17 @@ def main():
 
     import torch
     import types
+
+    # torch>=2.6 defaults torch.load(weights_only=True), which rejects demucs's
+    # pickled full-model checkpoints (htdemucs.th / htdemucs_ft.th); restore
+    # the legacy behavior — the weights come from the official demucs releases
+    _torch_load = torch.load
+
+    def _load_any(*a, **k):
+        k.setdefault("weights_only", False)
+        return _torch_load(*a, **k)
+
+    torch.load = _load_any
 
     import demucs.apply as dapply
 
@@ -213,4 +236,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as e:
+        fail(crash_message(e))

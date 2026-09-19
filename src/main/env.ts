@@ -228,6 +228,45 @@ export function gpuVendorInfo(): GpuVendor | null | undefined {
   return vendorInfo
 }
 
+let nvidiaCapProbe: Promise<string | null> | null = null
+
+/* NVIDIA compute capability, e.g. "12.0" for an RTX 5090 (sm_120). Exposed by
+   nvidia-smi on driver 450+; null when absent or unreadable */
+export function detectNvidiaComputeCap(): Promise<string | null> {
+  if (!SUPPORTS_GPU) return Promise.resolve(null)
+  if (!nvidiaCapProbe) {
+    nvidiaCapProbe = runCapture(
+      'nvidia-smi',
+      ['--query-gpu=compute_cap', '--format=csv,noheader'],
+      10000
+    )
+      .then((out) => {
+        const m = out.match(/(\d+)\.(\d+)/)
+        return m ? `${m[1]}.${m[2]}` : null
+      })
+      .catch(() => null)
+  }
+  return nvidiaCapProbe
+}
+
+/* the torch build's CUDA runtime version, e.g. "12.1"; empty when unset or
+   the venv has no torch */
+async function torchCudaVersion(): Promise<string> {
+  return (
+    await runCapture(
+      venvPython(),
+      ['-c', 'import torch;print(torch.version.cuda or "")'],
+      30000
+    ).catch(() => '')
+  ).trim()
+}
+
+function cudaVersionAtLeast(v: string, maj: number, min: number): boolean {
+  const m = v.match(/(\d+)\.(\d+)/)
+  if (!m) return false
+  return parseInt(m[1], 10) * 100 + parseInt(m[2], 10) >= maj * 100 + min
+}
+
 /* venvs created before the roformer engine lack a few small packages;
    verify and install them once per session */
 export async function ensureEngineDeps(): Promise<boolean> {
@@ -760,6 +799,14 @@ function gfxOverride(gfx: string): string | null {
   return null
 }
 
+/* RTX 50-series and newer (compute capability 12.0/10.0) have no kernels in
+   cu121 torch — first launch dies with "no kernel image is available". The
+   cu128 build of torch 2.7.0 ships sm_100/120 kernels; every older NVIDIA
+   card stays on the long-tested 2.5.1 cu121 engine. torch 2.7 needs the
+   torch.load shim in separate.py (demucs ships pre-2.6 checkpoints) */
+const BLACKWELL_TORCH_VERSION = '2.7.0'
+const BLACKWELL_TORCH_INDEX = 'https://download.pytorch.org/whl/cu128'
+
 /* the HSA override computed by the AMD preflight must survive restarts: the
    informational gpu probe (torch.cuda.is_available) passes without it, so a
    fresh session would otherwise skip the preflight and ship an override-less
@@ -797,8 +844,6 @@ export function ensureGpuEngine(
   }
   if (!gpuEnginePromise) {
     gpuEnginePromise = (async () => {
-      // already swapped in: the venv's torch speaks to a GPU, nothing to install
-      if (await hasGpuAcceleration()) return true
       // the Settings toggle is only rendered when a GPU was detected, but a
       // stale setting or a failed probe could still land here — don't pull
       // ~2.5GB of GPU torch on a machine that can't use it
@@ -813,7 +858,26 @@ export function ensureGpuEngine(
       // no ROCm wheels for windows: an AMD card there stays on CPU
       if (vendor === 'amd' && IS_WIN) return false
       const label = vendor === 'amd' ? 'AMD' : 'NVIDIA'
-      sendEnvEvent(`Downloading the ${label} GPU engine (~2.5GB, one time)`)
+      // wheel selection: Blackwell-class NVIDIA cards (compute cap 10+)
+      // need the cu128 build; anything already installed from cu121 must be
+      // upgraded to it. Without this, the early-return below would leave the
+      // older engine in place and separation would die mid-split
+      let torchVersion = GPU_TORCH_VERSION
+      let torchIndex = GPU_TORCH_INDEX[vendor]
+      let sizeLabel = '~2.5GB'
+      let needUpgrade = false
+      if (vendor === 'nvidia') {
+        const capMajor = parseInt(((await detectNvidiaComputeCap()) ?? '').split('.')[0], 10)
+        if (!Number.isNaN(capMajor) && capMajor >= 10) {
+          torchVersion = BLACKWELL_TORCH_VERSION
+          torchIndex = BLACKWELL_TORCH_INDEX
+          sizeLabel = '~3GB'
+          needUpgrade = !(await cudaVersionAtLeast(await torchCudaVersion(), 12, 8))
+        }
+      }
+      // already swapped in: the venv's torch speaks to a GPU, nothing to install
+      if (!needUpgrade && (await hasGpuAcceleration())) return true
+      sendEnvEvent(`Downloading the ${label} GPU engine (${sizeLabel}, one time)`)
       await new Promise<void>((resolve, reject) => {
         const child = spawn(
           venvPython(),
@@ -826,10 +890,10 @@ export function ensureGpuEngine(
             // the gpu build
             '-U',
             '--no-cache-dir',
-            `torch==${GPU_TORCH_VERSION}`,
-            `torchaudio==${GPU_TORCH_VERSION}`,
+            `torch==${torchVersion}`,
+            `torchaudio==${torchVersion}`,
             '--index-url',
-            GPU_TORCH_INDEX[vendor]
+            torchIndex
           ],
           { env: { ...process.env } }
         )

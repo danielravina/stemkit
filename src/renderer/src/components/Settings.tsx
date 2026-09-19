@@ -271,7 +271,10 @@ export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props)
                   </p>
                   <DownloadBar pct={gpuPct} starting={gpuBusy && gpuPct === null} error={gpuError} />
                   {showGpuConfirm && (
-                    <ConfirmButton label="Download now · ~2.5 GB" onClick={startGpu} />
+                    <ConfirmButton
+                      label={gpuVendor === 'amd' ? 'Download now · ~2.5 GB' : 'Download now · ~3 GB'}
+                      onClick={startGpu}
+                    />
                   )}
                 </div>
                 <Toggle
