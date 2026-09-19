@@ -59,7 +59,7 @@ Wrong Node version? Scripts auto-relaunch with a suitable one (nvm / nvm-windows
 ## Build & release
 
 ```bash
-bash scripts/fetch-ffmpeg.sh        # mac/linux (one time)
+bash scripts/fetch-ffmpeg.sh        # mac (builds arm64 ffmpeg + libsoxr, needs cmake) / linux (one time)
 powershell scripts/fetch-ffmpeg.ps1 # windows (one time)
 
 npm run dist        # mac dmg -> release/

@@ -12,6 +12,13 @@ export function initUpdater(): void {
 
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
+  // pins every client to the GitHub release marked "Latest" (electron-updater
+  // resolves that via the GitHub API when allowPrerelease is false). The
+  // default — true for beta-suffixed app versions — walks the releases feed
+  // for the newest beta tag instead, which once served an untested
+  // pre-release to everyone. Test builds stay drafts (invisible here) and
+  // testers install them manually
+  autoUpdater.allowPrerelease = false
 
   autoUpdater.on('checking-for-update', () => send('checking'))
   autoUpdater.on('update-available', (info) => {
