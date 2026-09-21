@@ -3,12 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>StemKit — split songs from YouTube into stems</title>
-  <meta name="description" content="Free and open source. Paste a link, pick your instruments, and play vocals, drums, bass, guitar and piano as synced stems. Runs entirely on your machine." />
-  <meta property="og:title" content="StemKit — split songs from YouTube into stems" />
-  <meta property="og:description" content="Free and open source. Runs entirely on your machine. Karaoke, acapellas and instrumentals, one click away." />
-  <meta property="og:image" content="https://stemkit.pages.dev/media/hero.jpg" />
+  <title>StemKit: split songs from YouTube into stems</title>
+  <meta name="description" content="Paste a YouTube link or open a local file, pick your instruments, and get vocals, drums, bass, guitar and piano as synced stems. Free and open source, and it runs entirely on your machine." />
+  <meta property="og:title" content="StemKit: split songs from YouTube into stems" />
+  <meta property="og:description" content="Free, open source, and it runs entirely on your machine. Karaoke tracks, acapellas and instrumentals from any YouTube link." />
+  <meta property="og:image" content="https://stemkit.pages.dev/media/og.jpg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="StemKit splitting a song into six synced stems" />
   <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://stemkit.pages.dev/media/og.jpg" />
   <link rel="icon" type="image/png" href="icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -49,17 +53,17 @@
 
     nav { display: flex; align-items: center; justify-content: space-between; padding: 26px 0; }
     .brand { display: flex; align-items: center; gap: 11px; text-decoration: none; color: var(--text); }
-    .brand img { width: 30px; height: 30px; border-radius: 8px; }
-    .brand span { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }
+    .brand img { width: 38px; height: 38px; border-radius: 10px; }
+    .brand span { font-size: 21px; font-weight: 600; letter-spacing: -0.02em; }
     nav .right { display: flex; align-items: center; gap: 22px; }
-    nav .right a { color: var(--muted); text-decoration: none; font-size: 14.5px; transition: color 0.15s; }
+    nav .right a { color: var(--muted); text-decoration: none; font-size: 16px; transition: color 0.15s; }
     nav .right a:hover { color: var(--text); }
     nav .right a.gh { display: flex; align-items: center; gap: 7px; }
     nav .right svg { width: 17px; height: 17px; fill: currentColor; }
     nav .right a.gh .stars {
       display: inline-flex; align-items: center; gap: 4px;
       background: rgba(255, 255, 255, 0.09); padding: 2px 7px; border-radius: 999px;
-      color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums;
+      color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums;
     }
     nav .right a.gh .stars svg { width: 12px; height: 12px; }
 
@@ -74,28 +78,28 @@
       background: linear-gradient(100deg, var(--violet) 0%, #e7e7ef 50%, var(--emerald) 100%);
       -webkit-background-clip: text; background-clip: text; color: transparent;
     }
-    .hero .sub { margin: 26px auto 0; max-width: 520px; color: var(--muted); font-size: 18px; line-height: 1.55; }
+    .hero .sub { margin: 26px auto 0; max-width: 520px; color: var(--muted); font-size: 19.5px; line-height: 1.55; }
     .cta { margin-top: 38px; display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap; }
     .btn-dl {
       display: inline-flex; align-items: center; gap: 10px;
       background: #fff; color: #0b0b10;
       padding: 15px 30px; border-radius: 999px;
-      font-size: 15.5px; font-weight: 600; text-decoration: none;
+      font-size: 17px; font-weight: 600; text-decoration: none;
       transition: transform 0.15s ease, box-shadow 0.15s ease;
     }
     .btn-dl:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(167, 139, 250, 0.35); }
     .btn-dl svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 2; }
     .btn-ghost {
       display: inline-flex; align-items: center;
-      color: var(--muted); text-decoration: none; font-size: 14.5px;
+      color: var(--muted); text-decoration: none; font-size: 16px;
       padding: 15px 8px; transition: color 0.15s;
     }
     .btn-ghost:hover { color: var(--text); }
-    .dl-cap { margin-top: 16px; font-size: 12.5px; color: var(--faint); font-family: "JetBrains Mono", monospace; }
+    .dl-cap { margin-top: 16px; font-size: 14px; color: var(--faint); font-family: "JetBrains Mono", monospace; }
 
     .frame {
       position: relative; margin-top: 64px;
-      border-radius: 18px; overflow: hidden;
+      border-radius: 26px; overflow: hidden;
       border: 1px solid var(--line);
       box-shadow: 0 40px 90px rgba(0, 0, 0, 0.55);
       background: #101016;
@@ -103,28 +107,51 @@
     .frame::before {
       content: ""; position: absolute; inset: -1px; z-index: -1;
       background: linear-gradient(120deg, rgba(167, 139, 250, 0.35), rgba(52, 211, 153, 0.25));
-      filter: blur(46px); opacity: 0.5; border-radius: 24px;
+      filter: blur(46px); opacity: 0.5; border-radius: 32px;
     }
     .frame img { display: block; width: 100%; height: auto; }
+    .frame video { display: block; width: 100%; height: auto; cursor: pointer; }
+    .frame .vbtn {
+      position: absolute; z-index: 2;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 999px; cursor: pointer;
+      background: rgba(11, 11, 16, 0.55);
+      border: 1px solid var(--line);
+      color: var(--text);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      transition: background 0.15s ease, transform 0.15s ease, opacity 0.2s ease;
+    }
+    .frame .vbtn:hover { background: rgba(11, 11, 16, 0.78); }
+    .frame .vbtn:focus-visible { outline: 2px solid var(--violet); outline-offset: 2px; }
+    .frame .vbtn svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .frame .vplay {
+      top: 50%; left: 50%;
+      width: 72px; height: 72px;
+      transform: translate(-50%, -50%) scale(1);
+    }
+    .frame .vplay:hover { transform: translate(-50%, -50%) scale(1.07); }
+    .frame.full .vplay { display: none; }
+    .frame.full video { cursor: default; }
 
     section { padding: 110px 0 0; }
     .kicker {
       font-family: "JetBrains Mono", monospace;
-      font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase;
+      font-size: 13.5px; letter-spacing: 0.22em; text-transform: uppercase;
       color: var(--violet); margin-bottom: 16px;
     }
     .kicker.green { color: var(--emerald); }
     .kicker.amber { color: var(--amber); }
-    h2 { font-size: clamp(1.7rem, 3.4vw, 2.5rem); font-weight: 600; letter-spacing: -0.03em; }
-    .lede { color: var(--muted); font-size: 16.5px; margin-top: 14px; max-width: 560px; line-height: 1.6; }
+    h2 { font-size: clamp(1.9rem, 3.6vw, 2.75rem); font-weight: 600; letter-spacing: -0.03em; }
+    .lede { color: var(--muted); font-size: 18px; margin-top: 14px; max-width: 560px; line-height: 1.6; }
 
     .frow { display: grid; grid-template-columns: 5fr 6fr; gap: clamp(40px, 6vw, 80px); align-items: center; }
     .frow.flip .txt { order: 2; }
     .txt .accent { display: block; width: 34px; height: 3px; border-radius: 2px; margin-bottom: 22px; }
     .txt h2 { margin-bottom: 14px; }
-    .txt > p { color: var(--muted); font-size: 15.5px; line-height: 1.7; max-width: 460px; }
+    .txt > p { color: var(--muted); font-size: 17px; line-height: 1.7; max-width: 460px; }
     .txt ul { margin-top: 22px; display: grid; gap: 10px; }
-    .txt li { color: var(--muted); font-size: 14px; padding-left: 20px; position: relative; list-style: none; }
+    .txt li { color: var(--muted); font-size: 15.5px; padding-left: 20px; position: relative; list-style: none; }
     .txt li::before {
       content: ""; position: absolute; left: 0; top: 7px;
       width: 6px; height: 6px; border-radius: 50%;
@@ -135,27 +162,24 @@
       border-radius: 16px;
       background: #101016; border: 1px solid var(--line);
       box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45);
+      aspect-ratio: 4 / 3;
     }
-    .shot img { display: block; width: 100%; height: auto; }
+    .shot img { display: block; width: 100%; height: 100%; object-fit: cover; }
     .shot.zoom img { width: 125%; max-width: none; }
-    .caption-note { color: var(--faint); font-size: 13px; margin-top: 16px; font-family: "JetBrains Mono", monospace; text-align: center; }
+    .caption-note { color: var(--faint); font-size: 14.5px; margin-top: 16px; font-family: "JetBrains Mono", monospace; text-align: center; }
 
     .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; margin-top: 56px; }
     .step { border-top: 1px solid var(--line); padding-top: 26px; }
-    .step .n { font-family: "JetBrains Mono", monospace; font-size: 13px; color: var(--faint); }
-    .step h3 { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin: 14px 0 10px; }
-    .step p { color: var(--muted); font-size: 14.5px; line-height: 1.6; }
+    .step .n { font-family: "JetBrains Mono", monospace; font-size: 14.5px; color: var(--faint); }
+    .step h3 { font-size: 20.5px; font-weight: 600; letter-spacing: -0.02em; margin: 14px 0 10px; }
+    .step p { color: var(--muted); font-size: 16px; line-height: 1.6; }
 
     .reqs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; margin-top: 52px; }
     .req { border-top: 1px solid var(--line); padding-top: 20px; }
-    .req b { display: block; font-size: 16.5px; font-weight: 600; letter-spacing: -0.01em; }
-    .req span { display: block; color: var(--muted); font-size: 14.5px; margin-top: 7px; line-height: 1.55; }
+    .req b { display: block; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+    .req span { display: block; color: var(--muted); font-size: 16px; margin-top: 7px; line-height: 1.55; }
 
-    .boxes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; margin-top: 20px; align-items: start; position: relative; z-index: 1; }
-    .pbox:nth-child(1) { margin-top: 0; }
-    .pbox:nth-child(2) { margin-top: 44px; }
-    .pbox:nth-child(3) { margin-top: 88px; }
-    .pbox:nth-child(4) { margin-top: 132px; }
+    .boxes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; margin-top: 20px; position: relative; z-index: 1; }
     section.uses { position: relative; }
     .feathers {
       position: absolute; top: 0; bottom: 0;
@@ -181,8 +205,32 @@
       color: var(--c); margin-bottom: 22px;
     }
     .pico svg { width: 26px; height: 26px; stroke: currentColor; fill: none; }
-    .pbox h3 { font-size: 17.5px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 10px; }
-    .pbox p { color: var(--muted); font-size: 14px; line-height: 1.6; }
+    .pbox h3 { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 10px; }
+    .pbox p { color: var(--muted); font-size: 15.5px; line-height: 1.6; }
+
+    .wall { margin-top: 52px; columns: 4 250px; column-gap: 14px; }
+    .q { display: block; break-inside: avoid; margin: 0 0 14px; position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px 20px 18px; text-decoration: none; transition: border-color 0.15s, background 0.15s, transform 0.15s; }
+    .q::before {
+      content: "\201C";
+      position: absolute;
+      top: 2px; left: 14px;
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 64px;
+      line-height: 1;
+      color: var(--c);
+      opacity: 0.3;
+      pointer-events: none;
+    }
+    .q > * { position: relative; }
+    .q:hover { border-color: rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.06); transform: translateY(-2px); }
+    .q p { color: rgba(231, 231, 231, 0.78); font-size: 15.5px; line-height: 1.6; padding-top: 20px; }
+    .q .src { display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; font-family: "JetBrains Mono", monospace; font-size: 13px; color: var(--faint); }
+    .q .src i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+    .q:nth-child(5n+1) { --c: #a78bfa; }
+    .q:nth-child(5n+2) { --c: #f87171; }
+    .q:nth-child(5n+3) { --c: #60a5fa; }
+    .q:nth-child(5n+4) { --c: #fbbf24; }
+    .q:nth-child(5n+5) { --c: #34d399; }
 
     .end { text-align: center; padding: 130px 0 0; }
     .end h2 { max-width: 640px; margin: 0 auto; }
@@ -193,9 +241,9 @@
       padding: 34px 0 44px;
       display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;
     }
-    footer .note { color: var(--faint); font-size: 12.5px; }
+    footer .note { color: var(--faint); font-size: 14px; }
     footer .links { display: flex; gap: 22px; }
-    footer .links a { color: var(--muted); text-decoration: none; font-size: 13px; transition: color 0.15s; }
+    footer .links a { color: var(--muted); text-decoration: none; font-size: 14.5px; transition: color 0.15s; }
     footer .links a:hover { color: var(--text); }
 
     @media (max-width: 820px) {
@@ -203,7 +251,6 @@
       .frow { grid-template-columns: 1fr; gap: 30px; }
       .frow.flip .txt { order: 0; }
       .boxes { grid-template-columns: 1fr 1fr; }
-      .pbox:nth-child(n) { margin-top: 0; }
       .hero { padding-top: 56px; }
       section { padding-top: 84px; }
     }
@@ -236,7 +283,7 @@
         <i class="feather" style="--c: #a78bfa; top: 86%; right: -24%; width: 720px; height: 8px; opacity: 0.35; transform: rotate(-5deg);"></i>
       </div>
       <h1>Split songs from YouTube into <span class="grad">stems</span>.</h1>
-      <p class="sub">Paste a link, pick your instruments, and play vocals, drums, bass, guitar and piano as synced tracks. Free and open source. Runs entirely on your machine.</p>
+      <p class="sub">Paste a link or open a file, pick your instruments, and hit play. Free and open source, and it runs entirely on your machine.</p>
       <div class="cta">
         <a class="btn-dl" id="dl" href="https://github.com/danvelope/stemkit/releases/latest" data-ga="download">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -248,17 +295,23 @@
     </header>
 
     <figure class="frame" id="hero">
-      <img src="media/hero.jpg" alt="StemKit splitting a song into six stems" />
+      <video id="hero-video" poster="media/hero.jpg" autoplay muted loop playsinline preload="metadata" disablepictureinpicture aria-label="StemKit demo">
+        <source src="media/hero-loop.mp4" type="video/mp4" />
+        <source src="media/hero-loop.webm" type="video/webm" />
+      </video>
+      <button class="vbtn vplay" id="vplay" type="button" aria-label="Watch the full demo with sound" title="Watch the full demo (2:25, with sound)" data-ga="demo-play">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="8 5 19 12 8 19 8 5" fill="currentColor" stroke="none"/></svg>
+      </button>
     </figure>
 
     <section>
       <p class="kicker">How it works</p>
-      <h2>Three steps. No accounts, no uploads.</h2>
+      <h2>Three steps.</h2>
       <div class="steps">
         <div class="step">
           <span class="n">01</span>
-          <h3>Paste a link, or search</h3>
-          <p>YouTube search is built in. Find the song without opening a browser tab, hit split, and keep working while it runs in the background.</p>
+          <h3>Paste a link, search, or open a file</h3>
+          <p>Search YouTube without opening a browser tab, or open your own audio files: MP3, WAV, FLAC and more.</p>
         </div>
         <div class="step">
           <span class="n">02</span>
@@ -279,11 +332,10 @@
           <span class="accent" style="background: #a78bfa;"></span>
           <p class="kicker">Search</p>
           <h2>Embedded YouTube search.</h2>
-          <p>Type a song, click the result, and the split starts in the background. You never open a browser tab.</p>
+          <p>Type a song, click the result, and the split starts in the background.</p>
           <ul>
             <li>Results appear while you type</li>
             <li>One click sends it to split</li>
-            <li>No browser tab, ever</li>
           </ul>
         </div>
         <figure class="shot zoom">
@@ -297,12 +349,12 @@
         <div class="txt">
           <span class="accent" style="background: #34d399;"></span>
           <p class="kicker green">Split</p>
-          <h2>Seamless stem splits by instrument.</h2>
-          <p>Pick vocals, drums, bass, other, plus guitar and piano. The split runs locally with live progress, and presets isolate each instrument while the playhead keeps moving.</p>
+          <h2>Six stems.</h2>
+          <p>Splits run locally on your GPU with live progress, and presets isolate an instrument while the playhead keeps moving.</p>
           <ul>
             <li>Vocals, drums, bass, other</li>
-            <li>Guitar and piano when you need them</li>
-            <li>Live progress, runs locally</li>
+            <li>Guitar and piano when you want them</li>
+            <li>Mute and solo while the song plays</li>
           </ul>
         </div>
         <figure class="shot">
@@ -317,11 +369,10 @@
           <span class="accent" style="background: #fbbf24;"></span>
           <p class="kicker amber">Export</p>
           <h2>Export straight into your DAW.</h2>
-          <p>Every stem exports as a standard WAV file — vocals, drums, bass, guitar, piano, or the full instrumental. Drop them into Ableton, Logic, FL Studio, GarageBand. No conversion, no fuss.</p>
+          <p>Every stem exports as a standard WAV file: vocals, drums, bass, guitar, piano, or the full instrumental. Drop them into Ableton, Logic, FL Studio or GarageBand and get to work.</p>
           <ul>
             <li>Any stem, or all of them at once</li>
-            <li>Standard WAV files</li>
-            <li>Works with any DAW</li>
+            <li>Any DAW that reads WAV files, which is all of them</li>
           </ul>
         </div>
         <figure class="shot">
@@ -349,9 +400,54 @@
         </div>
         <div class="pbox">
           <span class="pico" style="--c: #fbbf24;"><i data-lucide="mic"></i></span>
-          <h3>Sing / Karaoke</h3>
+          <h3>Karaoke</h3>
           <p>Strip the vocals from any song and the mic is yours.</p>
         </div>
+      </div>
+    </section>
+
+    <section class="love">
+      <p class="kicker amber">Testimonials</p>
+      <h2>What people are saying.</h2>
+      <p class="lede">Real comments from Reddit, unedited.</p>
+      <div class="wall">
+        <a class="q" href="https://www.reddit.com/r/linuxaudio/comments/1whms7c/comment/pa4itot/" target="_blank" rel="noopener" data-ga="testimonial"><p>This works so amazingly well, thanks a lot! &lt;3</p><span class="src"><i></i>r/linuxaudio</span></a>
+        <a class="q" href="https://www.reddit.com/r/linuxaudio/comments/1whms7c/comment/pa7m7w6/" target="_blank" rel="noopener" data-ga="testimonial"><p>excellent stuff.good quality for compressed audio.</p><span class="src"><i></i>r/linuxaudio</span></a>
+        <a class="q" href="https://www.reddit.com/r/linuxaudio/comments/1whms7c/comment/pa43mxy/" target="_blank" rel="noopener" data-ga="testimonial"><p>Awesome, I was waiting for something like this on Linux.</p><span class="src"><i></i>r/linuxaudio</span></a>
+        <a class="q" href="https://www.reddit.com/r/linuxaudio/comments/1whms7c/comment/pa4ai6c/" target="_blank" rel="noopener" data-ga="testimonial"><p>That's awesome, thanks!</p><span class="src"><i></i>r/linuxaudio</span></a>
+        <a class="q" href="https://www.reddit.com/r/linuxaudio/comments/1whms7c/comment/pa60kar/" target="_blank" rel="noopener" data-ga="testimonial"><p>Been enjoying it for a week or two</p><span class="src"><i></i>r/linuxaudio</span></a>
+        <a class="q" href="https://www.reddit.com/r/linuxaudio/comments/1whms7c/comment/pa7ksvw/" target="_blank" rel="noopener" data-ga="testimonial"><p>I'll definitely keep this in mind for audio separation. I've used Moises for a long time until they went all AI.</p><span class="src"><i></i>r/linuxaudio</span></a>
+        <a class="q" href="https://www.reddit.com/r/linuxaudio/comments/1whms7c/comment/pad6zd8/" target="_blank" rel="noopener" data-ga="testimonial"><p>Daaaaamn, work really well</p><span class="src"><i></i>r/linuxaudio</span></a>
+        <a class="q" href="https://www.reddit.com/r/linuxaudio/comments/1whms7c/comment/padtufm/" target="_blank" rel="noopener" data-ga="testimonial"><p>For me, with zero knowledge of mixing and music production, your software is fantastic, it's so fun to play with it. Good job!</p><span class="src"><i></i>r/linuxaudio</span></a>
+        <a class="q" href="https://www.reddit.com/r/linuxaudio/comments/1whms7c/comment/pax4kwr/" target="_blank" rel="noopener" data-ga="testimonial"><p>Audio quality is really really good.</p><span class="src"><i></i>r/linuxaudio</span></a>
+        <a class="q" href="https://www.reddit.com/r/macapps/comments/1wjygkh/comment/pamxfkf/" target="_blank" rel="noopener" data-ga="testimonial"><p>Local processing is a nice distinction from the cloud tools.</p><span class="src"><i></i>r/macapps</span></a>
+        <a class="q" href="https://www.reddit.com/r/macapps/comments/1wjygkh/comment/pashfpf/" target="_blank" rel="noopener" data-ga="testimonial"><p>Wow this would have come in so handy while I was still in highschool trying to find acapella only music for talent shows</p><span class="src"><i></i>r/macapps</span></a>
+        <a class="q" href="https://www.reddit.com/r/macapps/comments/1wjygkh/comment/papvpii/" target="_blank" rel="noopener" data-ga="testimonial"><p>I gave it a try on a Thrown song, and it actually worked really well, man. Well done on this.</p><span class="src"><i></i>r/macapps</span></a>
+        <a class="q" href="https://www.reddit.com/r/macapps/comments/1wjygkh/comment/pavql02/" target="_blank" rel="noopener" data-ga="testimonial"><p>amazing!</p><span class="src"><i></i>r/macapps</span></a>
+        <a class="q" href="https://www.reddit.com/r/macapps/comments/1wjygkh/comment/pb2s9n5/" target="_blank" rel="noopener" data-ga="testimonial"><p>nice work and 😄 free! Thanks!</p><span class="src"><i></i>r/macapps</span></a>
+        <a class="q" href="https://www.reddit.com/r/macapps/comments/1wijsmn/comment/pabefg5/" target="_blank" rel="noopener" data-ga="testimonial"><p>Wow! The app looks super useful and it's free and opensource. That's awesome!</p><span class="src"><i></i>r/macapps</span></a>
+        <a class="q" href="https://www.reddit.com/r/macapps/comments/1wijsmn/comment/pabjq2m/" target="_blank" rel="noopener" data-ga="testimonial"><p>kudos mate 🔥 neat</p><span class="src"><i></i>r/macapps</span></a>
+        <a class="q" href="https://www.reddit.com/r/macapps/comments/1wijsmn/comment/pac2qt2/" target="_blank" rel="noopener" data-ga="testimonial"><p>Really like the local/no-account approach. The synced video + stems makes it feel more like a practice tool than just another splitter.</p><span class="src"><i></i>r/macapps</span></a>
+        <a class="q" href="https://www.reddit.com/r/FL_Studio/comments/1wh6z0r/comment/pa1btm9/" target="_blank" rel="noopener" data-ga="testimonial"><p>been looking for something like this. I use like 2 different websites to download the MP3 and then split. this'll speed things up much more smoothly. thanks!</p><span class="src"><i></i>r/FL_Studio</span></a>
+        <a class="q" href="https://www.reddit.com/r/FL_Studio/comments/1wh6z0r/comment/pa1m5bc/" target="_blank" rel="noopener" data-ga="testimonial"><p>very good separation and on par with other services that use the same model!</p><span class="src"><i></i>r/FL_Studio</span></a>
+        <a class="q" href="https://www.reddit.com/r/FL_Studio/comments/1wh6z0r/comment/pa0fgo3/" target="_blank" rel="noopener" data-ga="testimonial"><p>This looks insane.</p><span class="src"><i></i>r/FL_Studio</span></a>
+        <a class="q" href="https://www.reddit.com/r/FL_Studio/comments/1wh6z0r/comment/pb0p62v/" target="_blank" rel="noopener" data-ga="testimonial"><p>Love the program, been using it for the past days and it has been really helpful! &lt;3</p><span class="src"><i></i>r/FL_Studio</span></a>
+        <a class="q" href="https://www.reddit.com/r/coolgithubprojects/comments/1w17do7/comment/p6vqyb9/" target="_blank" rel="noopener" data-ga="testimonial"><p>I'm very impressed with how well this works.</p><span class="src"><i></i>r/coolgithubprojects</span></a>
+        <a class="q" href="https://www.reddit.com/r/coolgithubprojects/comments/1w17do7/comment/p7rzvp9/" target="_blank" rel="noopener" data-ga="testimonial"><p>wow, this works so well! +1 OP!! nice job</p><span class="src"><i></i>r/coolgithubprojects</span></a>
+        <a class="q" href="https://www.reddit.com/r/coolgithubprojects/comments/1w17do7/comment/pabrac6/" target="_blank" rel="noopener" data-ga="testimonial"><p>Awesome work brother!!</p><span class="src"><i></i>r/coolgithubprojects</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p6l2119/" target="_blank" rel="noopener" data-ga="testimonial"><p>Holy shit and it doesn't look like AI slop!!! Nice one.</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p6m3tuo/" target="_blank" rel="noopener" data-ga="testimonial"><p>Beautiful idea. Gratz on accelerating music development.</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p6npb3o/" target="_blank" rel="noopener" data-ga="testimonial"><p>The local-first call is the whole product. Subscription splitters always felt like renting a button.</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p6r841c/" target="_blank" rel="noopener" data-ga="testimonial"><p>this is amazing, thank you</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p855501/" target="_blank" rel="noopener" data-ga="testimonial"><p>Works beautiful on my mac m3 max.</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p8ebs6o/" target="_blank" rel="noopener" data-ga="testimonial"><p>Wow this looks amazing!!</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p6k7o3z/" target="_blank" rel="noopener" data-ga="testimonial"><p>Super usefull thanks</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p6l6a9k/" target="_blank" rel="noopener" data-ga="testimonial"><p>Godsend for me doing covers on guitar! Very cool, thanks!</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p6m2s3w/" target="_blank" rel="noopener" data-ga="testimonial"><p>Very, very cool. Well done!</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p8abjy6/" target="_blank" rel="noopener" data-ga="testimonial"><p>Nicely laid out and excuted. Well done!</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/pa4ueo2/" target="_blank" rel="noopener" data-ga="testimonial"><p>This is absolutely amazing. Havn't tried the paid software but it's just baffling to me that you can se a post, someone makes free software, and it just works on my linux mashine together with my nvidia card. Feels very polished, good UI and just installs everything for you. Great job my guy</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p6lc9br/" target="_blank" rel="noopener" data-ga="testimonial"><p>ok this is actually cool</p><span class="src"><i></i>r/SideProject</span></a>
+        <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p6lqstd/" target="_blank" rel="noopener" data-ga="testimonial"><p>black magic. i would have killed for something like this when i was a kid an started lerning guitar and drums</p><span class="src"><i></i>r/SideProject</span></a>
       </div>
     </section>
 
@@ -360,15 +456,14 @@
       <h2>Before you install.</h2>
       <div class="reqs">
         <div class="req"><b>Operating system</b><span>macOS 12 or newer (Apple Silicon), Windows 10 / 11, or Linux (x64)</span></div>
-        <div class="req"><b>First launch</b><span>StemKit sets up its own engine, about 2GB, one time. Nothing to install by hand.</span></div>
-        <div class="req"><b>Disk space</b><span>About 2GB, downloaded once during setup.</span></div>
-        <div class="req"><b>Internet</b><span>Needed to fetch songs from YouTube and for the one-time setup.</span></div>
-        <div class="req"><b>Privacy</b><span>Your songs and audio never leave your machine. The app sends a single anonymous ping per install (random id + version/OS) to count installs — nothing else.</span></div>
+        <div class="req"><b>GPU</b><span>NVIDIA (CUDA), AMD on Linux (ROCm, experimental), Apple Silicon (MPS), or CPU.</span></div>
+        <div class="req"><b>First launch</b><span>StemKit downloads its own engine, about 2GB, once. Internet is needed for that and for YouTube links; local files work offline.</span></div>
+        <div class="req"><b>Privacy</b><span>Your songs and audio never leave your machine.</span></div>
       </div>
     </section>
 
     <div class="end">
-      <h2>Free and open source. Runs entirely on your machine.</h2>
+      <h2>Free and open source. Go split something.</h2>
       <div class="cta">
         <a class="btn-dl" id="dl2" href="https://github.com/danvelope/stemkit/releases/latest" data-ga="download">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -376,7 +471,7 @@
         </a>
         <a class="btn-ghost" href="https://github.com/danvelope/stemkit" target="_blank" rel="noopener" data-ga="github">Star on GitHub</a>
       </div>
-      <p class="caption-note">no account needed · fully local processing · your audio never leaves your machine</p>
+      <p class="caption-note">no account needed · your audio stays on your machine</p>
     </div>
 
     <footer>
@@ -431,6 +526,28 @@
         })
 
       if (window.lucide) lucide.createIcons()
+
+      var hero = document.getElementById('hero')
+      var hv = document.getElementById('hero-video')
+      var vp = document.getElementById('vplay')
+      var full = false
+      if (hero && hv && vp) {
+        hv.addEventListener('click', function () {
+          if (full) return
+          if (hv.paused) hv.play(); else hv.pause()
+        })
+        vp.addEventListener('click', function () {
+          if (full) return
+          full = true
+          hero.classList.add('full')
+          hv.loop = false
+          hv.muted = false
+          hv.controls = true
+          hv.src = 'media/demo.mp4'
+          var p = hv.play()
+          if (p && p.catch) p.catch(function () { hv.controls = true })
+        })
+      }
 
       function formatStars(n) {
         if (!n) return ''
