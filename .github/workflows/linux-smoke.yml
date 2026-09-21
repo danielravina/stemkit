@@ -1,0 +1,40 @@
+name: linux-smoke
+
+# runs the app's self-test mode (STEMKIT_SMOKE=1) on a fresh ubuntu runner:
+# private-runtime bootstrap (the linux path prefers the downloaded runtime
+# over system pythons), ffmpeg mix, both engines on CPU, cuda fail-fast
+# paths. The GPU engine install is skipped (runners have no GPU; the
+# install mechanics are covered by windows-smoke). Called by release.yml on
+# tags, also runnable manually
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - name: Fetch ffmpeg (linux)
+        run: bash scripts/fetch-ffmpeg.sh
+
+      - run: npx electron-vite build
+
+      - name: Smoke (bootstrap + both engines)
+        # electron wants a display even for the windowless self-test
+        run: |
+          sudo apt-get install -y xvfb
+          xvfb-run -a env STEMKIT_SMOKE=1 STEMKIT_SMOKE_SKIP_GPU=1 npx electron .
+
+      - name: Print smoke log
+        if: always()
+        run: tail -50 /tmp/stemkit-smoke.log || true

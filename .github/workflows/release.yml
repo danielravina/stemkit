@@ -120,3 +120,19 @@ jobs:
             release/*.AppImage
             release/*.deb
           if-no-files-found: error
+
+  # regression gate: run the app's self-test (fresh install/bootstrap, both
+  # engines on CPU, GPU plumbing) on clean runners before a release is
+  # trusted. The electron-builder step above only creates a DRAFT — a red
+  # run here means do not publish it
+  smoke-windows:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/windows-smoke.yml
+    secrets: inherit
+
+  smoke-linux:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/linux-smoke.yml
+    secrets: inherit
