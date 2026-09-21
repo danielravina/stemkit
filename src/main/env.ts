@@ -267,6 +267,18 @@ function cudaVersionAtLeast(v: string, maj: number, min: number): boolean {
   return parseInt(m[1], 10) * 100 + parseInt(m[2], 10) >= maj * 100 + min
 }
 
+/* the torch build's HIP runtime version (rocm wheels only), e.g. "6.2.41133";
+   empty on cpu/cuda builds or when the venv has no torch */
+async function torchHipVersion(): Promise<string> {
+  return (
+    await runCapture(
+      venvPython(),
+      ['-c', 'import torch;print(torch.version.hip or "")'],
+      30000
+    ).catch(() => '')
+  ).trim()
+}
+
 /* venvs created before the roformer engine lack a few small packages;
    verify and install them once per session */
 export async function ensureEngineDeps(): Promise<boolean> {
@@ -781,19 +793,23 @@ export function ensureFtWeights(onProgress?: (pct: number) => void): Promise<boo
    linux pinned to the cpu index, since the default linux wheel would
    otherwise pull CUDA deps for everyone); these swap in on demand when the
    GPU-acceleration toggle is enabled — cu121 for NVIDIA (~2.5GB download),
-   rocm6.2 for AMD on linux. They stay installed when the toggle goes back
-   off — GPU torch handles cpu devices fine */
+   rocm6.4 for AMD on linux (~3GB). They stay installed when the toggle goes
+   back off — GPU torch handles cpu devices fine */
 const GPU_TORCH_VERSION = '2.5.1'
 const GPU_TORCH_INDEX: Record<GpuVendor, string> = {
   nvidia: 'https://download.pytorch.org/whl/cu121',
-  amd: 'https://download.pytorch.org/whl/rocm6.2'
+  amd: 'https://download.pytorch.org/whl/rocm6.4'
 }
+const AMD_TORCH_VERSION = '2.8.0'
 
-/* official rocm wheels ship kernel images for gfx90x/942, gfx1030 and
-   gfx1100 only; consumer RDNA parts (RX 6600 = gfx1032, 7600 = gfx1102,
-   680M iGPU = gfx1035, …) need HSA_OVERRIDE_GFX_VERSION to run the nearest
-   code object. The compute preflight below validates the result — if the
-   override does not save the card, the CPU path stays in charge */
+/* official rocm wheels ship kernel images for a subset of targets; consumer
+   RDNA2/3 parts (RX 6600 = gfx1032, 7600 = gfx1102, 680M iGPU = gfx1035, …)
+   need HSA_OVERRIDE_GFX_VERSION to run the nearest code object. RDNA4
+   (gfx1200/1201) is officially supported since rocm 6.4 — the reason the AMD
+   engine pins 2.8.0+rocm6.4: on 6.2 wheels an RX 9070 XT dies at first
+   launch with "invalid device function" and no override can rescue it. The
+   compute preflight below validates the result — if the wheels still can't
+   serve the card, the CPU path stays in charge */
 function gfxOverride(gfx: string): string | null {
   const id = parseInt((gfx.match(/gfx(\d+)/) ?? [])[1] ?? '', 10)
   if (Number.isNaN(id)) return null
@@ -864,7 +880,10 @@ export function ensureGpuEngine(
       // wheel selection: Blackwell-class NVIDIA cards (compute cap 10+)
       // need the cu128 build; anything already installed from cu121 must be
       // upgraded to it. Without this, the early-return below would leave the
-      // older engine in place and separation would die mid-split
+      // older engine in place and separation would die mid-split. Same story
+      // for AMD: the 2.8.0+rocm6.4 engine is required for RDNA4 (RX 9070 XT
+      // = gfx1201 has no kernels — and no override — on 6.2 wheels), so
+      // machines holding an older rocm engine must be upgraded too
       let torchVersion = GPU_TORCH_VERSION
       let torchIndex = GPU_TORCH_INDEX[vendor]
       let sizeLabel = '~2.5GB'
@@ -875,8 +894,12 @@ export function ensureGpuEngine(
           torchVersion = BLACKWELL_TORCH_VERSION
           torchIndex = BLACKWELL_TORCH_INDEX
           sizeLabel = '~3GB'
-          needUpgrade = !(await cudaVersionAtLeast(await torchCudaVersion(), 12, 8))
+          needUpgrade = !cudaVersionAtLeast(await torchCudaVersion(), 12, 8)
         }
+      } else {
+        torchVersion = AMD_TORCH_VERSION
+        sizeLabel = '~3GB'
+        needUpgrade = !cudaVersionAtLeast(await torchHipVersion(), 6, 4)
       }
       // already swapped in: the venv's torch speaks to a GPU, nothing to install
       if (!needUpgrade && (await hasGpuAcceleration())) return true
@@ -988,10 +1011,15 @@ export function ensureGpuEngine(
           )
           if (!ok.trim().includes('ok')) throw new Error('compute probe returned no result')
         } catch (err) {
+          const raw = err instanceof Error ? err.message : String(err)
+          // "invalid device function" = no kernel image for this gfx target —
+          // not a driver/permission problem, so the generic advice would
+          // mislead; point at the engine instead
+          const advice = /invalid device function|no kernel image/i.test(raw)
+            ? 'This GPU architecture has no kernels in the installed ROCm engine — update StemKit.'
+            : 'Check the amdgpu driver and that your user can access /dev/kfd and /dev/dri.'
           throw new Error(
-            `AMD GPU probe failed${override ? ` (using ${override})` : ''}: ${
-              err instanceof Error ? err.message : String(err)
-            }. Check the amdgpu driver and that your user can access /dev/kfd and /dev/dri`
+            `AMD GPU probe failed${override ? ` (using ${override})` : ''}: ${raw.slice(-300)}. ${advice}`
           )
         }
       }
