@@ -1,0 +1,40 @@
+name: macos-smoke
+
+# runs the app's self-test mode (STEMKIT_SMOKE=1) on a fresh macOS runner:
+# validates the full mac path end to end — the source-built arm64 ffmpeg
+# (fetch-ffmpeg.sh compiles ffmpeg + libsoxr), the private-runtime
+# bootstrap, both engines (htdemucs + roformer vocals, MPS with cpu
+# fallback), and the cuda fail-fast paths. The GPU engine install is
+# skipped (SUPPORTS_GPU is false on darwin; the install mechanics are
+# covered by windows-smoke). Called by release.yml on tags, also runnable
+# manually
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  smoke:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - name: Fetch ffmpeg (mac, source build)
+        run: bash scripts/fetch-ffmpeg.sh
+
+      - run: npx electron-vite build
+
+      - name: Smoke (bootstrap + both engines)
+        run: STEMKIT_SMOKE=1 STEMKIT_SMOKE_SKIP_GPU=1 npx electron .
+
+      - name: Print smoke log
+        if: always()
+        # electron's os.tmpdir() on macOS is the per-user temp dir, not /tmp
+        run: tail -50 "$TMPDIR/stemkit-smoke.log" || true

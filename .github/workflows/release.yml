@@ -136,3 +136,9 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     uses: ./.github/workflows/linux-smoke.yml
     secrets: inherit
+
+  smoke-macos:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/macos-smoke.yml
+    secrets: inherit
