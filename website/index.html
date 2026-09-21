@@ -232,6 +232,22 @@
     .q:nth-child(5n+4) { --c: #fbbf24; }
     .q:nth-child(5n+5) { --c: #34d399; }
 
+    .love .more {
+      display: none;
+      margin: 16px auto 0;
+      align-items: center;
+      padding: 11px 24px;
+      border-radius: 999px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-family: inherit;
+      font-size: 14.5px;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .love .more:hover { color: var(--text); border-color: rgba(255, 255, 255, 0.22); }
+
     .end { text-align: center; padding: 130px 0 0; }
     .end h2 { max-width: 640px; margin: 0 auto; }
     .end .cta { margin-top: 34px; }
@@ -251,6 +267,8 @@
       .frow { grid-template-columns: 1fr; gap: 30px; }
       .frow.flip .txt { order: 0; }
       .boxes { grid-template-columns: 1fr 1fr; }
+      .love.js-collapsed .q:nth-child(n+7) { display: none; }
+      .love.js-collapsed .more { display: flex; }
       .hero { padding-top: 56px; }
       section { padding-top: 84px; }
     }
@@ -449,6 +467,7 @@
         <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p6lc9br/" target="_blank" rel="noopener" data-ga="testimonial"><p>ok this is actually cool</p><span class="src"><i></i>r/SideProject</span></a>
         <a class="q" href="https://www.reddit.com/r/SideProject/comments/1w173wi/comment/p6lqstd/" target="_blank" rel="noopener" data-ga="testimonial"><p>black magic. i would have killed for something like this when i was a kid an started lerning guitar and drums</p><span class="src"><i></i>r/SideProject</span></a>
       </div>
+      <button class="more" id="more-q" type="button" data-ga="show-comments" aria-expanded="false">Show all</button>
     </section>
 
     <section>
@@ -546,6 +565,16 @@
           hv.src = 'media/demo.mp4'
           var p = hv.play()
           if (p && p.catch) p.catch(function () { hv.controls = true })
+        })
+      }
+
+      var love = document.querySelector('section.love')
+      var moreBtn = document.getElementById('more-q')
+      if (love && moreBtn) {
+        love.classList.add('js-collapsed')
+        moreBtn.addEventListener('click', function () {
+          love.classList.remove('js-collapsed')
+          moreBtn.setAttribute('aria-expanded', 'true')
         })
       }
 
