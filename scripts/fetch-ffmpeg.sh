@@ -6,17 +6,22 @@ OS="$(uname -s)"
 mkdir -p "$ROOT/extras"
 
 # the pipeline resamples with soxr, so every bundled ffmpeg must be built
-# with libsoxr. There is no public static macOS arm64 build with libsoxr
-# (evermeet.cx is x86_64-only, osxexperts.net ships arm64 without soxr), so
-# the mac path compiles ffmpeg + soxr from source — Apple Silicon only,
-# matching the arm64-only electron build
+# with libsoxr. There is no public static macOS build with libsoxr (evermeet.cx
+# is x86_64-only and soxr-less, osxexperts.net ships arm64 without soxr), so
+# the mac path compiles ffmpeg + soxr from source — both CPU slices, lipo'd
+# into one universal binary that serves the arm64 and x64 electron builds
 SOXR_VERSION="0.1.3"
 FFMPEG_VERSION="9.0.2"
 
 function mac_ffmpeg_is_usable() {
   local bin="$1"
   [[ -x "$bin" ]] || return 1
-  file "$bin" 2>/dev/null | grep -q arm64 || return 1
+  # the bundle is universal: a leftover arm64-only build from an older
+  # checkout counts as unusable so it gets replaced
+  local info
+  info="$(file "$bin" 2>/dev/null)"
+  grep -q arm64 <<<"$info" || return 1
+  grep -q x86_64 <<<"$info" || return 1
   "$bin" -hide_banner -buildconf 2>/dev/null | grep -q -- --enable-libsoxr
 }
 
@@ -25,7 +30,7 @@ function build_mac_ffmpeg() {
   # hw.optional.arm64 is kernel truth — a shell/binary running under Rosetta
   # makes uname -m report x86_64
   if [[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" != "1" ]]; then
-    echo "the macOS bundle targets Apple Silicon — run this on an arm64 Mac"
+    echo "the macOS bundle builds both CPU slices from an arm64 host (the Intel slice is cross-compiled) — run this on an arm64 Mac"
     exit 1
   fi
   if [[ "$(uname -m)" != "arm64" ]]; then
@@ -41,44 +46,71 @@ function build_mac_ffmpeg() {
 
   TMP="$(mktemp -d)"
   trap 'rm -rf "$TMP"' EXIT
-  PREFIX="$TMP/prefix"
   JOBS="$(sysctl -n hw.ncpu)"
 
-  echo "building libsoxr $SOXR_VERSION (arm64)..."
+  echo "fetching libsoxr $SOXR_VERSION and ffmpeg $FFMPEG_VERSION sources..."
   curl -fsSL -o "$TMP/soxr.tar.gz" "https://github.com/chirlu/soxr/archive/refs/tags/$SOXR_VERSION.tar.gz"
   tar -xzf "$TMP/soxr.tar.gz" -C "$TMP"
-  cmake -S "$TMP/soxr-$SOXR_VERSION" -B "$TMP/soxr-build" \
-    -DBUILD_SHARED_LIBS=OFF \
-    -DBUILD_TESTS=OFF \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_OSX_ARCHITECTURES=arm64 \
-    -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-    -DCMAKE_INSTALL_PREFIX="$PREFIX" >/dev/null
-  cmake --build "$TMP/soxr-build" --target install --parallel "$JOBS" >/dev/null
-
-  echo "building ffmpeg $FFMPEG_VERSION (arm64, static libsoxr) — this takes a few minutes..."
   curl -fsSL -o "$TMP/ffmpeg.tar.xz" "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz"
   tar -xf "$TMP/ffmpeg.tar.xz" -C "$TMP"
-  (
-    cd "$TMP/ffmpeg-$FFMPEG_VERSION"
-    PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" ./configure \
-      --enable-libsoxr \
-      --disable-autodetect \
-      --enable-zlib \
-      --enable-bzlib \
-      --disable-ffplay \
-      --disable-ffprobe \
-      --disable-doc \
-      --disable-debug \
-      --pkg-config-flags=--static \
-      --extra-cflags="-I$PREFIX/include -mmacosx-version-min=11.0" \
-      --extra-ldflags="-L$PREFIX/lib -mmacosx-version-min=11.0" >/dev/null
-    make --silent --jobs "$JOBS" >/dev/null
-  )
+
+  # per-arch soxr prefix + out-of-tree ffmpeg build dir; the universal
+  # output is assembled at the end with lipo
+  for arch in arm64 x86_64; do
+    # per-arch extra configure args. Plain strings (not arrays) and unquoted
+    # expansion: macOS/CI bash is 3.2, where an empty array under set -u
+    # reads as unbound
+    PREFIX="$TMP/prefix-$arch"
+    if [[ "$arch" == arm64 ]]; then
+      FF_ARCH_ARGS=""
+      ARCH_CFLAGS=""
+      ARCH_LDFLAGS=""
+    else
+      # cross-compiling the Intel slice on the arm64 host: clang takes -arch,
+      # and x86 hand-optimized asm is dropped rather than requiring nasm on
+      # the build host (plain C build — this binary only muxes/demuxes and
+      # feeds soxr, nothing speed-critical)
+      FF_ARCH_ARGS="--arch=x86_64 --enable-cross-compile --disable-x86asm"
+      ARCH_CFLAGS="-arch x86_64"
+      ARCH_LDFLAGS="-arch x86_64"
+    fi
+
+    echo "building libsoxr $SOXR_VERSION ($arch)..."
+    cmake -S "$TMP/soxr-$SOXR_VERSION" -B "$TMP/soxr-build-$arch" \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DBUILD_TESTS=OFF \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_OSX_ARCHITECTURES=$arch \
+      -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+      -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+      -DCMAKE_INSTALL_PREFIX="$PREFIX" >/dev/null
+    cmake --build "$TMP/soxr-build-$arch" --target install --parallel "$JOBS" >/dev/null
+
+    echo "building ffmpeg $FFMPEG_VERSION ($arch, static libsoxr) — this takes a few minutes..."
+    mkdir -p "$TMP/ffmpeg-build-$arch"
+    (
+      cd "$TMP/ffmpeg-build-$arch"
+      PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" "$TMP/ffmpeg-$FFMPEG_VERSION/configure" \
+        --enable-libsoxr \
+        --disable-autodetect \
+        --enable-zlib \
+        --enable-bzlib \
+        --disable-ffplay \
+        --disable-ffprobe \
+        --disable-doc \
+        --disable-debug \
+        --pkg-config-flags=--static \
+        --extra-cflags="-I$PREFIX/include -mmacosx-version-min=11.0 $ARCH_CFLAGS" \
+        --extra-ldflags="-L$PREFIX/lib -mmacosx-version-min=11.0 $ARCH_LDFLAGS" \
+        $FF_ARCH_ARGS >/dev/null
+      make --silent --jobs "$JOBS" >/dev/null
+    )
+    cp -f "$TMP/ffmpeg-build-$arch/ffmpeg" "$TMP/ffmpeg-$arch"
+  done
 
   mkdir -p "$OUT"
-  cp -f "$TMP/ffmpeg-$FFMPEG_VERSION/ffmpeg" "$out"
+  echo "assembling universal binary (arm64 + x86_64)..."
+  lipo -create "$TMP/ffmpeg-arm64" "$TMP/ffmpeg-x86_64" -output "$out"
   chmod +x "$out"
   xattr -dr com.apple.quarantine "$out" 2>/dev/null || true
 
@@ -97,7 +129,7 @@ if [[ "$OS" == "Darwin" ]]; then
     exit 0
   fi
   if [[ -e "$OUT/ffmpeg" ]]; then
-    echo "existing ffmpeg is unusable (wrong CPU arch or missing libsoxr) — replacing it..."
+    echo "existing ffmpeg is unusable (not a universal build or missing libsoxr) — replacing it..."
     rm -f "$OUT/ffmpeg"
   fi
   build_mac_ffmpeg "$OUT/ffmpeg"
