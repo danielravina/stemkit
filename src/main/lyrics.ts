@@ -152,12 +152,12 @@ export function ensureLyricsEngine(
   onProgress?: (pct: number) => void
 ): Promise<boolean> {
   if (onProgress) lyricsProgressListeners.add(onProgress)
-  const detach = (): boolean => {
+  const detach = (result: boolean): boolean => {
     if (onProgress) lyricsProgressListeners.delete(onProgress)
-    return true
+    return result
   }
   if (existsSync(readyMarkerPath(model))) {
-    detach()
+    detach(true)
     return Promise.resolve(true)
   }
   if (!lyricsEnginePromise) {
@@ -281,12 +281,12 @@ export async function maybeExtractLyrics(
   const vocalsPath = join(stemsDir(videoId), 'vocals.wav')
   if (!existsSync(vocalsPath)) return
 
-  const model = settings.lyricsModel
-  const markerPath = lyricsModelMarkerPath(videoId)
-  const existingModel = existsSync(markerPath) ? readFileSync(markerPath, 'utf8').trim() : null
-  if (lyricsPresent(videoId) && existingModel === model) return
-
   try {
+    const model = settings.lyricsModel
+    const markerPath = lyricsModelMarkerPath(videoId)
+    const existingModel = existsSync(markerPath) ? readFileSync(markerPath, 'utf8').trim() : null
+    if (lyricsPresent(videoId) && existingModel === model) return
+
     if (!(await ensureLyricsDeps())) {
       onProgress(0, 'Could not prepare the lyrics engine components')
       return
@@ -302,6 +302,10 @@ export async function maybeExtractLyrics(
     const result = await runTranscribe(vocalsPath, songDir(videoId), model, device, (pct) =>
       onProgress(30 + Math.round(pct * 0.7))
     )
+    if (result.error) {
+      sendEnvEvent(`Lyrics extraction failed: ${result.error}`, 'error')
+      return
+    }
     writeFileSync(markerPath, model)
     if (result.lines === 0) {
       onProgress(100, 'No lyrics found')
