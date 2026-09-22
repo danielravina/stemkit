@@ -8,6 +8,8 @@ function settingsFile(): string {
   return join(userDataDir(), 'settings.json')
 }
 
+const LYRICS_MODELS: AppSettings['lyricsModel'][] = ['small', 'medium', 'large-v3']
+
 export function loadSettings(): AppSettings {
   try {
     const data = JSON.parse(readFileSync(settingsFile(), 'utf8'))
@@ -24,7 +26,9 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
     htdemucsFt: !!merged.htdemucsFt,
     roformerVocals: !!merged.roformerVocals,
     gpuSplit: !!merged.gpuSplit,
-    hideVideo: !!merged.hideVideo
+    hideVideo: !!merged.hideVideo,
+    extractLyrics: !!merged.extractLyrics,
+    lyricsModel: LYRICS_MODELS.includes(merged.lyricsModel) ? merged.lyricsModel : 'medium'
   }
   writeFileSync(settingsFile(), JSON.stringify(next, null, 2))
   for (const win of BrowserWindow.getAllWindows()) {
