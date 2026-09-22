@@ -127,6 +127,35 @@ let engineDepsReady = false
 let gpuProbe: Promise<boolean> | null = null
 let gpuInfo: boolean | undefined
 
+/* probe the op, not just the device: Intel Macs with AMD graphics report MPS
+   but lack aten::_fft_r2c, and roformer runs its STFT on the accelerator —
+   device presence alone would send those machines down a path that dies
+   mid-split (the scripts fall back to CPU, but a real torch.stft keeps this
+   answer honest up front). demucs is unaffected either way: its spectro()
+   moves the STFT to the CPU when the tensor is on MPS */
+const GPU_PROBE = `
+import torch
+device = None
+if torch.cuda.is_available():
+    device = 'cuda'
+elif torch.backends.mps.is_available():
+    device = 'mps'
+ok = False
+if device is not None:
+    try:
+        torch.stft(
+            torch.zeros(2048, device=device),
+            n_fft=512,
+            hop_length=128,
+            window=torch.hann_window(512, device=device),
+            return_complex=True,
+        )
+        ok = True
+    except Exception:
+        ok = False
+print(1 if ok else 0)
+`
+
 /* informational only: whether the venv's torch can use a GPU (MPS on Apple
    Silicon, CUDA on NVIDIA). Engine choice no longer depends on this — it is
    surfaced in Settings as "GPU acceleration available — fast" vs "not
@@ -138,14 +167,7 @@ export function hasGpuAcceleration(): Promise<boolean> {
     return Promise.resolve(false)
   }
   if (!gpuProbe) {
-    gpuProbe = runCapture(
-      venvPython(),
-      [
-        '-c',
-        'import torch;print(1 if (torch.cuda.is_available() or torch.backends.mps.is_available()) else 0)'
-      ],
-      30000
-    )
+    gpuProbe = runCapture(venvPython(), ['-c', GPU_PROBE], 30000)
       .then((out) => out.trim().endsWith('1'))
       .catch(() => false)
       .then((gpu) => {
@@ -1084,6 +1106,21 @@ export async function ensureRuntimePython(): Promise<boolean> {
   }
 }
 
+/* PyTorch shipped its last macOS x86_64 wheels in 2.2.2, so the 2.5.1 pin
+   cannot resolve on Intel Macs and the whole engine install aborts. Probe
+   the interpreter rather than process.arch — a system python can be a
+   different architecture to Electron (and to Rosetta) */
+async function torchPinsFor(python: string): Promise<string[]> {
+  let machine = process.arch === 'arm64' ? 'arm64' : 'x86_64'
+  try {
+    machine = (
+      await runCapture(python, ['-c', 'import platform;print(platform.machine())'], 15000)
+    ).trim()
+  } catch {}
+  const version = process.platform === 'darwin' && machine !== 'arm64' ? '2.2.2' : '2.5.1'
+  return [`torch==${version}`, `torchaudio==${version}`]
+}
+
 export async function bootstrap(): Promise<boolean> {
   if (state.bootstrapping) return false
   if (!state.python.found || !state.python.path) {
@@ -1163,6 +1200,8 @@ export async function bootstrap(): Promise<boolean> {
       child.on('error', reject)
     })
 
+    const torchPins = await torchPinsFor(pip)
+
     sendEnvEvent('Downloading the separation engine — grab a coffee')
     let lastGeneric = 0
     // on linux the default PyPI torch wheel is CUDA-enabled and would pull
@@ -1203,8 +1242,7 @@ export async function bootstrap(): Promise<boolean> {
         '--progress-bar',
         'off',
         'demucs==4.0.1',
-         'torch==2.5.1',
-        'torchaudio==2.5.1',
+        ...torchPins,
         'numpy<2',
         'beartype',
         'rotary-embedding-torch',
