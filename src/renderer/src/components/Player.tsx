@@ -8,6 +8,7 @@ import { YouTubeHost, type YTState } from '../lib/youtube'
 import { StemLane } from './StemLane'
 import { Transport, type PresetId } from './Transport'
 import { DownloadIcon } from './Icons'
+import { Lyrics } from './Lyrics'
 
 type BufferCacheMap = BufferMap
 
@@ -400,33 +401,38 @@ export function Player({ song, settings }: Props): React.ReactElement {
             youtubeUrl={youtubeUrl ?? undefined}
           />
 
-          <div className="mt-4 space-y-2">
-            {decoding
-              ? [...Array(4)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="glass rounded-xl h-16 animate-pulse"
-                    style={{ animationDelay: `${i * 120}ms` }}
-                  />
-                ))
-              : stemMeta.map((meta) => (
-              <StemLane
-                key={meta.id}
-                meta={meta}
-                buffer={buffers[meta.id] ?? null}
-                duration={duration}
-                getPosition={getPosition}
-                audible={!mutes.has(meta.id) && (solos.size === 0 || solos.has(meta.id))}
-                volume={vols[meta.id] ?? 1}
-                muted={mutes.has(meta.id)}
-                soloed={solos.has(meta.id)}
-                onToggleMute={() => toggleMute(meta.id)}
-                onToggleSolo={() => toggleSolo(meta.id)}
-                onVolume={(v) => setVols((prev) => ({ ...prev, [meta.id]: v }))}
-                onSeek={seekTo}
-                onExport={() => exportStem(meta.id)}
-              />
-            ))}
+          <div className="mt-4 flex items-start gap-4">
+            <div className="flex-1 min-w-0 space-y-2">
+              {decoding
+                ? [...Array(4)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="glass rounded-xl h-16 animate-pulse"
+                      style={{ animationDelay: `${i * 120}ms` }}
+                    />
+                  ))
+                : stemMeta.map((meta) => (
+                <StemLane
+                  key={meta.id}
+                  meta={meta}
+                  buffer={buffers[meta.id] ?? null}
+                  duration={duration}
+                  getPosition={getPosition}
+                  audible={!mutes.has(meta.id) && (solos.size === 0 || solos.has(meta.id))}
+                  volume={vols[meta.id] ?? 1}
+                  muted={mutes.has(meta.id)}
+                  soloed={solos.has(meta.id)}
+                  onToggleMute={() => toggleMute(meta.id)}
+                  onToggleSolo={() => toggleSolo(meta.id)}
+                  onVolume={(v) => setVols((prev) => ({ ...prev, [meta.id]: v }))}
+                  onSeek={seekTo}
+                  onExport={() => exportStem(meta.id)}
+                />
+              ))}
+            </div>
+            {song.lyrics && !decoding && (
+              <Lyrics videoId={song.videoId} getPosition={getPosition} onSeek={seekTo} />
+            )}
           </div>
         </div>
       </div>
