@@ -1,9 +1,9 @@
 import argparse
 import json
 import os
+import struct
 import sys
 import time
-import wave
 
 import numpy as np
 
@@ -25,20 +25,35 @@ def fail(message):
 
 def load_wav(path):
     try:
-        with wave.open(path, "rb") as w:
-            sr = w.getframerate()
-            channels = w.getnchannels()
-            width = w.getsampwidth()
-            frames = w.readframes(w.getnframes())
+        with open(path, "rb") as f:
+            data = f.read()
     except Exception as e:
         fail(f"cannot read wav {path}: {e}")
-    if width == 2:
-        audio = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
-    elif width == 4:
-        audio = np.frombuffer(frames, dtype="<f4").astype(np.float32)
+    if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        fail(f"not a wav file: {path}")
+    fmt_tag = channels = sr = bits = None
+    audio_bytes = None
+    offset = 12
+    while offset + 8 <= len(data):
+        chunk_id = data[offset:offset + 4]
+        chunk_size = struct.unpack("<I", data[offset + 4:offset + 8])[0]
+        chunk_start = offset + 8
+        if chunk_id == b"fmt ":
+            fmt_tag, channels, sr, _, _, bits = struct.unpack(
+                "<HHIIHH", data[chunk_start:chunk_start + 16]
+            )
+        elif chunk_id == b"data":
+            audio_bytes = data[chunk_start:chunk_start + chunk_size]
+        offset = chunk_start + chunk_size + (chunk_size % 2)
+    if fmt_tag is None or audio_bytes is None:
+        fail(f"malformed wav: {path}")
+    if fmt_tag == 1 and bits == 16:
+        audio = np.frombuffer(audio_bytes, dtype="<i2").astype(np.float32) / 32768.0
+    elif fmt_tag == 3 and bits == 32:
+        audio = np.frombuffer(audio_bytes, dtype="<f4").astype(np.float32)
     else:
-        fail(f"unsupported sample width {width}")
-    if channels == 0:
+        fail(f"unsupported wav format (tag={fmt_tag}, bits={bits})")
+    if not channels:
         fail("empty wav")
     return audio.reshape(-1, channels).T, sr
 
