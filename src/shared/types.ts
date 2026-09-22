@@ -60,8 +60,8 @@ export interface EngineStatus {
   // gpu torch engine (windows/linux; cuda for nvidia, rocm for amd on linux)
   gpuDownloading: boolean
   gpuReady: boolean
-  lyricsDownloading: boolean
-  lyricsReady: boolean
+  lyricsDownloading?: boolean
+  lyricsReady?: boolean
 }
 
 export interface EnvStatus {
