@@ -145,11 +145,13 @@ function reuseOrPrepare(
   stems?: string[]
 ): { covered: boolean; addedAt: number } {
   const existing = loadSongs().find((s) => s.videoId === videoId)
+  const settings = loadSettings()
   const covered =
     existing &&
     existing.model === modelTag &&
     !!existing.stems?.length &&
-    (stems?.length ? stems.every((s) => existing.stems!.includes(s)) : true)
+    (stems?.length ? stems.every((s) => existing.stems!.includes(s)) : true) &&
+    (!settings.extractLyrics || lyricsPresent(videoId))
   if (covered && stemsPresent(videoId, stemsFor(existing))) {
     send({ kind: 'done', data: { videoId, song: existing } })
     return { covered: true, addedAt: existing!.addedAt }
@@ -305,9 +307,16 @@ export async function startJob(
 
     const producedStems = await runSeparation(job, plan, stems)
     if (job.cancelled || !jobs.has(videoId)) return
-    await maybeExtractLyrics(videoId, plan.settings, plan.deviceArg(), (pct, msg) =>
-      progress(job, 'lyrics', pct, msg)
+    await maybeExtractLyrics(
+      videoId,
+      plan.settings,
+      plan.deviceArg(),
+      (pct, msg) => progress(job, 'lyrics', pct, msg),
+      (child) => {
+        job.proc = child
+      }
     )
+    if (job.cancelled || !jobs.has(videoId)) return
     finalizeJob(job, { title: meta!.title, duration: meta!.duration, addedAt, startedAt }, producedStems)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -373,9 +382,16 @@ export async function startLocalJob(
 
     const producedStems = await runSeparation(job, plan, stems)
     if (job.cancelled || !jobs.has(videoId)) return
-    await maybeExtractLyrics(videoId, plan.settings, plan.deviceArg(), (pct, msg) =>
-      progress(job, 'lyrics', pct, msg)
+    await maybeExtractLyrics(
+      videoId,
+      plan.settings,
+      plan.deviceArg(),
+      (pct, msg) => progress(job, 'lyrics', pct, msg),
+      (child) => {
+        job.proc = child
+      }
     )
+    if (job.cancelled || !jobs.has(videoId)) return
     finalizeJob(job, { title, duration, addedAt, startedAt, source: 'local' }, producedStems)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

@@ -31,6 +31,7 @@ export function Lyrics({ videoId, getPosition, onSeek }: Props): React.ReactElem
   const [lines, setLines] = useState<LyricLine[]>([])
   const [activeIndex, setActiveIndex] = useState(-1)
   const lineRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const listRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -60,13 +61,22 @@ export function Lyrics({ videoId, getPosition, onSeek }: Props): React.ReactElem
   }, [lines, getPosition])
 
   useEffect(() => {
-    lineRefs.current[activeIndex]?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    const container = listRef.current
+    const el = lineRefs.current[activeIndex]
+    if (!container || !el) return
+    container.scrollTo({
+      top: el.offsetTop - container.clientHeight / 2 + el.clientHeight / 2,
+      behavior: 'smooth'
+    })
   }, [activeIndex])
 
   if (lines.length === 0) return null
 
   return (
-    <div className="glass rounded-2xl w-72 shrink-0 max-h-[420px] overflow-y-auto px-3 py-4 space-y-1">
+    <div
+      ref={listRef}
+      className="glass rounded-2xl w-72 shrink-0 max-h-[420px] overflow-y-auto px-3 py-4 space-y-1"
+    >
       {lines.map((line, i) => (
         <button
           key={i}

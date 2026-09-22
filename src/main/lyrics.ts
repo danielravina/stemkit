@@ -1,4 +1,4 @@
-import { spawn, execFile } from 'child_process'
+import { spawn, execFile, type ChildProcess } from 'child_process'
 import { createInterface } from 'readline'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
@@ -77,9 +77,20 @@ export async function ensureLyricsDeps(): Promise<boolean> {
   sendEnvEvent('Preparing lyrics components…')
   try {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(venvPython(), ['-m', 'pip', 'install', '-q', 'openai-whisper'], {
-        env: { ...process.env }
-      })
+      const child = spawn(
+        venvPython(),
+        [
+          '-m',
+          'pip',
+          'install',
+          '-q',
+          'openai-whisper==20240930',
+          'torch==2.5.1',
+          'torchaudio==2.5.1',
+          'numpy<2'
+        ],
+        { env: { ...process.env } }
+      )
       child.on('close', (code) =>
         code === 0 ? resolve() : reject(new Error(`pip install failed (${code})`))
       )
@@ -203,7 +214,8 @@ function runTranscribe(
   outDir: string,
   model: LyricsModel,
   device: string,
-  onProgress?: (pct: number) => void
+  onProgress?: (pct: number) => void,
+  onChild?: (child: ChildProcess) => void
 ): Promise<TranscribeResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(
@@ -223,6 +235,7 @@ function runTranscribe(
       ],
       { env: { ...process.env } }
     )
+    onChild?.(child)
     let lines = 0
     let scriptError: string | undefined
     let lastPct = 0
@@ -266,6 +279,34 @@ function runTranscribe(
   })
 }
 
+/* caps concurrent whisper processes at 1 — whisper already saturates one
+   device, and each instance holds a full model (~1.5-3GB RAM) plus decoded
+   audio in memory, so letting N queued songs run N concurrent transcriptions
+   would balloon memory use. Mirrors the acquireSeparation/releaseSeparation
+   pattern in pipeline.ts, but scoped to just the transcribe step (not the
+   engine-download step, which has its own dedup via lyricsEnginePromise) */
+let activeLyricsExtractions = 0
+const MAX_CONCURRENT_LYRICS = 1
+const lyricsWaiters: Array<() => void> = []
+
+function acquireLyricsSlot(): Promise<() => void> {
+  if (activeLyricsExtractions < MAX_CONCURRENT_LYRICS) {
+    activeLyricsExtractions++
+    return Promise.resolve(releaseLyricsSlot)
+  }
+  return new Promise((resolve) => {
+    lyricsWaiters.push(() => {
+      activeLyricsExtractions++
+      resolve(releaseLyricsSlot)
+    })
+  })
+}
+
+function releaseLyricsSlot(): void {
+  activeLyricsExtractions--
+  lyricsWaiters.shift()?.()
+}
+
 /* called from pipeline.ts right after a job's stem separation finishes.
    Purely additive: any failure here is logged as an env event but never
    throws, so it can never fail the containing split job. Caching is
@@ -275,7 +316,8 @@ export async function maybeExtractLyrics(
   videoId: string,
   settings: AppSettings,
   device: string,
-  onProgress: (pct: number, message?: string) => void
+  onProgress: (pct: number, message?: string) => void,
+  onChild?: (child: ChildProcess) => void
 ): Promise<void> {
   if (!settings.extractLyrics) return
   const vocalsPath = join(stemsDir(videoId), 'vocals.wav')
@@ -299,9 +341,20 @@ export async function maybeExtractLyrics(
       return
     }
     onProgress(30, 'Extracting lyrics')
-    const result = await runTranscribe(vocalsPath, songDir(videoId), model, device, (pct) =>
-      onProgress(30 + Math.round(pct * 0.7))
-    )
+    const release = await acquireLyricsSlot()
+    let result: TranscribeResult
+    try {
+      result = await runTranscribe(
+        vocalsPath,
+        songDir(videoId),
+        model,
+        device,
+        (pct) => onProgress(30 + Math.round(pct * 0.7)),
+        onChild
+      )
+    } finally {
+      release()
+    }
     if (result.error) {
       sendEnvEvent(`Lyrics extraction failed: ${result.error}`, 'error')
       return
