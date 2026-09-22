@@ -30,6 +30,7 @@ import {
   AUDIO_EXTENSIONS,
   wavDuration
 } from './library'
+import { maybeExtractLyrics, lyricsPresent } from './lyrics'
 import type { JobEvent, JobStage } from '../shared/types'
 import { MODEL_DEFAULT, MODEL_EXTENDED } from '../shared/types'
 import { parseVideoId } from '../shared/url'
@@ -204,7 +205,8 @@ function finalizeJob(
     model: job.model,
     stems: producedStems,
     took,
-    source: info.source
+    source: info.source,
+    lyrics: lyricsPresent(job.videoId)
   })
   send({ kind: 'done', data: { videoId: job.videoId, song: songs[0] } })
 }
@@ -303,6 +305,9 @@ export async function startJob(
 
     const producedStems = await runSeparation(job, plan, stems)
     if (job.cancelled || !jobs.has(videoId)) return
+    await maybeExtractLyrics(videoId, plan.settings, plan.deviceArg(), (pct, msg) =>
+      progress(job, 'lyrics', pct, msg)
+    )
     finalizeJob(job, { title: meta!.title, duration: meta!.duration, addedAt, startedAt }, producedStems)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -368,6 +373,9 @@ export async function startLocalJob(
 
     const producedStems = await runSeparation(job, plan, stems)
     if (job.cancelled || !jobs.has(videoId)) return
+    await maybeExtractLyrics(videoId, plan.settings, plan.deviceArg(), (pct, msg) =>
+      progress(job, 'lyrics', pct, msg)
+    )
     finalizeJob(job, { title, duration, addedAt, startedAt, source: 'local' }, producedStems)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
