@@ -8,6 +8,8 @@ import { YouTubeHost, type YTState } from '../lib/youtube'
 import { StemLane } from './StemLane'
 import { Transport, type PresetId } from './Transport'
 import { DownloadIcon } from './Icons'
+import { ChordPanel } from './ChordPanel'
+import { LyricsPanel } from './LyricsPanel'
 
 type BufferCacheMap = BufferMap
 
@@ -399,6 +401,13 @@ export function Player({ song, settings }: Props): React.ReactElement {
             onMaster={setMaster}
             youtubeUrl={youtubeUrl ?? undefined}
           />
+
+          <div className="mt-4">
+            <ChordPanel videoId={song.videoId} duration={duration || song.duration} getPosition={getPosition} onSeek={seekTo} />
+          </div>
+          <div className="mt-4">
+            <LyricsPanel videoId={song.videoId} duration={duration || song.duration} getPosition={getPosition} onSeek={seekTo} />
+          </div>
 
           <div className="mt-4 space-y-2">
             {decoding
