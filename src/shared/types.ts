@@ -71,7 +71,52 @@ export interface EnvEvent {
   level: 'info' | 'error' | 'success'
 }
 
-export type JobStage = 'metadata' | 'download' | 'convert' | 'separate' | 'finalize'
+export type JobStage = 'metadata' | 'download' | 'convert' | 'separate' | 'chords' | 'lyrics' | 'finalize'
+
+export interface LyricLine {
+  time: number
+  duration: number
+  text: string
+}
+export interface LyricsDoc {
+  version: 1
+  duration: number
+  source: 'youtube' | 'imported' | 'manual'
+  language?: string
+  lines: LyricLine[]
+  generatedAt: number
+}
+
+export interface ChordSegment {
+  time: number
+  duration: number
+  chord: string
+  root: number
+  quality: string
+  score: number
+}
+
+export interface ChordsDoc {
+  version: 1
+  duration: number
+  hop: number
+  win: number
+  generatedAt: number
+  chords: ChordSegment[]
+  source?: 'local' | 'chordify'
+  chordifyMeta?: { bpm: number; barLength: number }
+}
+
+export interface ChordifyStatus {
+  connected: boolean
+  cookieCount: number
+}
+
+export interface ChordSources {
+  local: ChordsDoc | null
+  chordify: ChordsDoc | null
+  active: 'local' | 'chordify' | null
+}
 
 export interface JobProgress {
   videoId: string
@@ -133,8 +178,29 @@ export interface StemKitApi {
   onThumbCached(cb: (videoId: string) => void): () => void
   enginesStatus(): Promise<EngineStatus>
   fetchEngine(which: 'vocals' | 'ft' | 'gpu'): Promise<void>
+  getChords(videoId: string): Promise<ChordsDoc | null>
+  analyzeChords(videoId: string): Promise<{ started: boolean; error?: string }>
+  deleteChords(videoId: string): Promise<void>
+  exportChords(videoId: string): Promise<{ saved: boolean; path?: string }>
+  getChordSources(videoId: string): Promise<ChordSources>
+  // Chordify — requires a paid Chordify subscription logged in via the app
+  chordifyStatus(): Promise<ChordifyStatus>
+  chordifyLogin(): Promise<{ success: boolean; error?: string }>
+  chordifyLogout(): Promise<void>
+  chordifyFetch(videoId: string): Promise<{ ok: boolean; error?: string; doc?: ChordsDoc }>
+  chordifyImport(videoId: string): Promise<{ ok: boolean; error?: string; doc?: ChordsDoc }>
+  chordifyDelete(videoId: string): Promise<void>
+  chordifyOpen(videoId: string): Promise<void>
+  // Lyrics addon — YouTube auto-captions + file import (LRC/SRT/VTT)
+  getLyrics(videoId: string): Promise<LyricsDoc | null>
+  fetchLyrics(videoId: string): Promise<{ ok: boolean; error?: string; doc?: LyricsDoc }>
+  importLyrics(videoId: string): Promise<{ ok: boolean; error?: string; doc?: LyricsDoc }>
+  deleteLyrics(videoId: string): Promise<void>
+  exportLyrics(videoId: string): Promise<{ saved: boolean; path?: string }>
   onUpdateEvent(cb: (ev: UpdateEvent) => void): () => void
   onJobEvent(cb: (ev: JobEvent) => void): () => void
   onEnvEvent(cb: (ev: EnvEvent) => void): () => void
   onSettingsChange(cb: (settings: AppSettings) => void): () => void
+  onChordsDone(cb: (ev: { videoId: string }) => void): () => void
+  onLyricsDone(cb: (ev: { videoId: string }) => void): () => void
 }

@@ -22,6 +22,9 @@ import {
 } from './env'
 import { loadSettings, saveSettings } from './settings'
 import { loadSongs, removeSong, stemBuffers, stemsDir, stemsFor, mixWavPath, AUDIO_EXTENSIONS } from './library'
+import { readChords, analyzeChords, exportChordsFile, deleteChordsFile, cancelAnalysis, getChordSources } from './chords'
+import { getChordifyStatus, openChordifyLogin, openChordifySongPage, logoutChordify, fetchChordifyForSong, importChordifyFile, deleteChordifyDoc } from './chordify'
+import { readLyrics, fetchLyricsForSong, importLyricsFile, deleteLyricsFile, exportLyricsFile } from './lyrics'
 import { startJob, startLocalJob, cancelJob, searchYouTube } from './pipeline'
 import { initUpdater } from './updater'
 import { runSmoke } from './smoke'
@@ -253,6 +256,74 @@ app.whenReady().then(async () => {
     else if (which === 'ft') void ensureFtWeights()
     else void ensureGpuEngine()
   })
+
+  // chords — dual-source: local (offline) + Chordify (subscription, guitar-friendly triads)
+  ipcMain.handle('chords:get', (_e, videoId: string) => readChords(videoId))
+  ipcMain.handle('chords:sources', (_e, videoId: string) => getChordSources(videoId))
+  ipcMain.handle('chords:analyze', (_e, videoId: string) => analyzeChords(videoId))
+  ipcMain.handle('chords:delete', (_e, videoId: string) => deleteChordsFile(videoId))
+  ipcMain.handle('chords:export', (_e, videoId: string) => exportChordsFile(videoId))
+  ipcMain.handle('chords:cancel', (_e, videoId?: string) => cancelAnalysis(videoId))
+  // Chordify — requires a paid subscription; authenticates via the app's browser login window
+  ipcMain.handle('chordify:status', () => getChordifyStatus())
+  ipcMain.handle('chordify:login', () => openChordifyLogin())
+  ipcMain.handle('chordify:logout', () => logoutChordify())
+  ipcMain.handle('chordify:fetch', async (_e, videoId: string) => {
+    try {
+      const song = loadSongs().find(s => s.videoId === videoId)
+      const dur = song?.duration ?? 0
+      if (!dur) throw new Error('Song not found — split it first')
+      const doc = await fetchChordifyForSong(videoId, dur)
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send('chords:done', { videoId })
+      return { ok: true, doc }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+  ipcMain.handle('chordify:import', async (_e, videoId: string) => {
+    try {
+      const song = loadSongs().find(s => s.videoId === videoId)
+      const dur = song?.duration ?? 0
+      if (!dur) throw new Error('Song not found — split it first')
+      const doc = await importChordifyFile(videoId, dur)
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.send('chords:done', { videoId })
+      return { ok: true, doc }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/cancelled/i.test(msg)) return { ok: false, error: msg }
+      return { ok: false, error: msg }
+    }
+  })
+  ipcMain.handle('chordify:delete', (_e, videoId: string) => deleteChordifyDoc(videoId))
+  ipcMain.handle('chordify:open', (_e, videoId: string) => openChordifySongPage(videoId))
+  // lyrics addon — standalone, never touches chord engine
+  ipcMain.handle('lyrics:get', (_e, videoId: string) => readLyrics(videoId))
+  ipcMain.handle('lyrics:fetch', async (_e, videoId: string) => {
+    try {
+      const song = loadSongs().find(s => s.videoId === videoId)
+      const dur = song?.duration ?? 0
+      if (!dur) throw new Error('Song not found — split it first')
+      const doc = await fetchLyricsForSong(videoId, dur)
+      return { ok: true, doc }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+  ipcMain.handle('lyrics:import', async (_e, videoId: string) => {
+    try {
+      const song = loadSongs().find(s => s.videoId === videoId)
+      const dur = song?.duration ?? 0
+      if (!dur) throw new Error('Song not found — split it first')
+      const doc = await importLyricsFile(videoId, dur)
+      return { ok: true, doc }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/cancelled/i.test(msg)) return { ok: false, error: msg }
+      return { ok: false, error: msg }
+    }
+  })
+  ipcMain.handle('lyrics:delete', (_e, videoId: string) => deleteLyricsFile(videoId))
+  ipcMain.handle('lyrics:export', (_e, videoId: string) => exportLyricsFile(videoId))
   initUpdater()
   // anonymous usage heartbeat: one POST per install per day
   maybePing()
@@ -272,6 +343,7 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   cancelJob()
+  cancelAnalysis()
   staticServer?.close()
   app.quit()
 })

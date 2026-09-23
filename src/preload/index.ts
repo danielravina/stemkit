@@ -32,10 +32,29 @@ const api: StemKitApi = {
   onThumbCached: (cb) => subscribe<string>('thumb:cached', cb),
   enginesStatus: () => ipcRenderer.invoke('engines:status'),
   fetchEngine: (which) => ipcRenderer.invoke('engines:fetch', which),
+  getChords: (videoId) => ipcRenderer.invoke('chords:get', videoId),
+  getChordSources: (videoId) => ipcRenderer.invoke('chords:sources', videoId),
+  analyzeChords: (videoId) => ipcRenderer.invoke('chords:analyze', videoId),
+  deleteChords: (videoId) => ipcRenderer.invoke('chords:delete', videoId),
+  exportChords: (videoId) => ipcRenderer.invoke('chords:export', videoId),
+  chordifyStatus: () => ipcRenderer.invoke('chordify:status'),
+  chordifyLogin: () => ipcRenderer.invoke('chordify:login'),
+  chordifyLogout: () => ipcRenderer.invoke('chordify:logout'),
+  chordifyFetch: (videoId) => ipcRenderer.invoke('chordify:fetch', videoId),
+  chordifyImport: (videoId) => ipcRenderer.invoke('chordify:import', videoId),
+  chordifyDelete: (videoId) => ipcRenderer.invoke('chordify:delete', videoId),
+  chordifyOpen: (videoId) => ipcRenderer.invoke('chordify:open', videoId),
+  getLyrics: (videoId) => ipcRenderer.invoke('lyrics:get', videoId),
+  fetchLyrics: (videoId) => ipcRenderer.invoke('lyrics:fetch', videoId),
+  importLyrics: (videoId) => ipcRenderer.invoke('lyrics:import', videoId),
+  deleteLyrics: (videoId) => ipcRenderer.invoke('lyrics:delete', videoId),
+  exportLyrics: (videoId) => ipcRenderer.invoke('lyrics:export', videoId),
   onUpdateEvent: (cb) => subscribe<UpdateEvent>('update:event', cb),
   onJobEvent: (cb) => subscribe<JobEvent>('job:event', cb),
   onEnvEvent: (cb) => subscribe<EnvEvent>('env:event', cb),
-  onSettingsChange: (cb) => subscribe<AppSettings>('settings:changed', cb)
+  onSettingsChange: (cb) => subscribe<AppSettings>('settings:changed', cb),
+  onChordsDone: (cb) => subscribe<{ videoId: string }>('chords:done', cb),
+  onLyricsDone: (cb) => subscribe<{ videoId: string }>('lyrics:done', cb)
 }
 
 contextBridge.exposeInMainWorld('stemkit', api)
