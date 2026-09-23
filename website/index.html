@@ -636,6 +636,13 @@
         max-width: 640px;
         margin: 0 auto;
       }
+      .end .sub2 {
+        margin: 18px auto 0;
+        color: var(--muted);
+        font-size: 18.5px;
+        max-width: 560px;
+        line-height: 1.55;
+      }
       .end .cta {
         margin-top: 34px;
       }
@@ -1311,7 +1318,8 @@
       </section>
 
       <div class="end">
-        <h2>Free and open source. Go split something.</h2>
+        <h2>Join thousands of creators</h2>
+        <p class="sub2">Split. Learn. Remix. All in one place.</p>
         <div class="cta">
           <a
             class="btn-dl"
@@ -1326,18 +1334,9 @@
                 stroke-linejoin="round"
               />
             </svg>
-            <span id="dl2-label">Download</span>
+            <span id="dl2-label">Download StemKit</span>
           </a>
-          <a
-            class="btn-ghost"
-            href="https://github.com/danvelope/stemkit"
-            target="_blank"
-            rel="noopener"
-            data-ga="github"
-            >Star on GitHub</a
-          >
         </div>
-        <p class="caption-note">no account needed · your audio stays on your machine</p>
       </div>
 
       <footer>
@@ -1425,10 +1424,8 @@
             var b = document.getElementById(id);
             if (b) b.href = href;
           });
-          ["dl-label", "dl2-label"].forEach(function (id) {
-            var l = document.getElementById(id);
-            if (l) l.textContent = label;
-          });
+          var l = document.getElementById("dl-label");
+          if (l) l.textContent = label;
           var c = document.getElementById("dl-cap");
           if (c) c.textContent = cap;
         }
