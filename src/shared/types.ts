@@ -20,6 +20,8 @@ export interface Song {
   took?: number
   // local audio files carry their own mix; absent means a YouTube source
   source?: 'local'
+  // whether a synced lyrics.lrc exists for this song
+  lyrics?: boolean
 }
 
 export interface AppSettings {
@@ -34,6 +36,10 @@ export interface AppSettings {
   // hide the YouTube video while playing: stems are always played locally,
   // this stops streaming the video and falls back to cached thumbnails
   hideVideo: boolean
+  // opt-in local lyrics transcription (whisper, run on the isolated vocals
+  // stem); the model choice is global, not per-song
+  extractLyrics: boolean
+  lyricsModel: 'small' | 'medium' | 'large-v3'
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -41,7 +47,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   htdemucsFt: false,
   roformerVocals: false,
   gpuSplit: false,
-  hideVideo: false
+  hideVideo: false,
+  extractLyrics: false,
+  lyricsModel: 'medium'
 }
 
 export interface EngineStatus {
@@ -52,6 +60,8 @@ export interface EngineStatus {
   // gpu torch engine (windows/linux; cuda for nvidia, rocm for amd on linux)
   gpuDownloading: boolean
   gpuReady: boolean
+  lyricsDownloading?: boolean
+  lyricsReady?: boolean
 }
 
 export interface EnvStatus {
@@ -71,7 +81,7 @@ export interface EnvEvent {
   level: 'info' | 'error' | 'success'
 }
 
-export type JobStage = 'metadata' | 'download' | 'convert' | 'separate' | 'finalize'
+export type JobStage = 'metadata' | 'download' | 'convert' | 'separate' | 'lyrics' | 'finalize'
 
 export interface JobProgress {
   videoId: string
@@ -130,9 +140,10 @@ export interface StemKitApi {
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   getThumb(videoId: string): Promise<string | null>
+  getLyrics(videoId: string): Promise<string | null>
   onThumbCached(cb: (videoId: string) => void): () => void
   enginesStatus(): Promise<EngineStatus>
-  fetchEngine(which: 'vocals' | 'ft' | 'gpu'): Promise<void>
+  fetchEngine(which: 'vocals' | 'ft' | 'gpu' | 'lyrics'): Promise<void>
   onUpdateEvent(cb: (ev: UpdateEvent) => void): () => void
   onJobEvent(cb: (ev: JobEvent) => void): () => void
   onEnvEvent(cb: (ev: EnvEvent) => void): () => void

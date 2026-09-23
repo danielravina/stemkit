@@ -31,6 +31,8 @@ function stageLabel(stage: JobStage, pct: number): string {
       return 'converting…'
     case 'separate':
       return `separating ${Math.round(pct)}%`
+    case 'lyrics':
+      return `extracting lyrics ${Math.round(pct)}%`
     case 'finalize':
       return 'finishing…'
   }

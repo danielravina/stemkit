@@ -21,6 +21,7 @@ import {
   getStatus
 } from './env'
 import { loadSettings, saveSettings } from './settings'
+import { ensureLyricsEngine, lyricsEngineStatus, readLyrics } from './lyrics'
 import { loadSongs, removeSong, stemBuffers, stemsDir, stemsFor, mixWavPath, AUDIO_EXTENSIONS } from './library'
 import { startJob, startLocalJob, cancelJob, searchYouTube } from './pipeline'
 import { initUpdater } from './updater'
@@ -231,6 +232,8 @@ app.whenReady().then(async () => {
     return { saved: true, path: target, count }
   })
 
+  ipcMain.handle('lyrics:get', (_e, videoId: string) => readLyrics(videoId))
+
   ipcMain.handle('search:youtube', (_e, query: string) => searchYouTube(query))
   ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.handle('settings:get', () => loadSettings())
@@ -246,12 +249,13 @@ app.whenReady().then(async () => {
   ipcMain.handle('engines:status', () => {
     // warm the cuda probe so gpuReady flips without waiting for a split
     if (getStatus().ready) void hasGpuAcceleration()
-    return engineStatus()
+    return { ...engineStatus(), ...lyricsEngineStatus(loadSettings().lyricsModel) }
   })
-  ipcMain.handle('engines:fetch', (_e, which: 'vocals' | 'ft' | 'gpu') => {
+  ipcMain.handle('engines:fetch', (_e, which: 'vocals' | 'ft' | 'gpu' | 'lyrics') => {
     if (which === 'vocals') void ensureVocalsEngine()
     else if (which === 'ft') void ensureFtWeights()
-    else void ensureGpuEngine()
+    else if (which === 'gpu') void ensureGpuEngine()
+    else void ensureLyricsEngine(loadSettings().lyricsModel)
   })
   initUpdater()
   // anonymous usage heartbeat: one POST per install per day

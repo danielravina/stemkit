@@ -17,6 +17,7 @@ import {
   detectNvidiaGpu,
   detectAmdGpu
 } from './env'
+import { smokeTestTranscribe } from './lyrics'
 
 /* self-test mode, driven by STEMKIT_SMOKE=1 (used by the windows-smoke CI
    job and manually on linux): runs the real bootstrap then separates a
@@ -215,6 +216,21 @@ export async function runSmoke(): Promise<boolean> {
       return false
     }
     log('roformer vocals ok')
+
+    // lyrics extraction on a pure sine-wave mix: must not hallucinate any
+    // lines (no vocals content at all) — proves the no_speech/avg_logprob
+    // filter in transcribe.py actually works
+    const lyricsOut = join(dir, 'stems-lyrics')
+    const lyricsResult = await smokeTestTranscribe(join(roformerOut, 'vocals.wav'), lyricsOut)
+    if (!lyricsResult.ok) {
+      log(`FAIL: lyrics extraction: ${lyricsResult.error}`)
+      return false
+    }
+    if (lyricsResult.lines > 0) {
+      log(`FAIL: lyrics extraction produced ${lyricsResult.lines} hallucinated lines from a tone-only mix`)
+      return false
+    }
+    log('lyrics extraction ok (no hallucinated lines on silence/tone)')
 
     // GPU plumbing: --device cuda must fail fast with the friendly message
     // on the default cpu torch (before any big downloads). After the GPU

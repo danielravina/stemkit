@@ -108,6 +108,12 @@ function SectionHeader({ label }: { label: string }): React.ReactElement {
   )
 }
 
+const LYRICS_MODEL_SIZES: Record<AppSettings['lyricsModel'], string> = {
+  small: '~500 MB',
+  medium: '~1.5 GB',
+  'large-v3': '~3 GB'
+}
+
 export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props): React.ReactElement {
   const [engines, setEngines] = useState<EngineStatus | null>(null)
   const [vocalsPct, setVocalsPct] = useState<number | null>(null)
@@ -119,6 +125,9 @@ export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props)
   const [vocalsStarting, setVocalsStarting] = useState(false)
   const [ftStarting, setFtStarting] = useState(false)
   const [gpuStarting, setGpuStarting] = useState(false)
+  const [lyricsPct, setLyricsPct] = useState<number | null>(null)
+  const [lyricsError, setLyricsError] = useState<string | null>(null)
+  const [lyricsStarting, setLyricsStarting] = useState(false)
 
   useEffect(() => {
     const off = window.stemkit.onEnvEvent((e) => {
@@ -145,6 +154,14 @@ export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props)
       }
       if (/GPU engine ready/.test(e.message)) setGpuPct(100)
       if (/GPU engine install failed/.test(e.message)) setGpuError(e.message)
+
+      const lyricsEngine = e.message.match(/lyrics engine: (\d+)%/)
+      if (lyricsEngine) {
+        setLyricsPct(parseInt(lyricsEngine[1], 10))
+        setLyricsError(null)
+      }
+      if (/Lyrics engine ready/.test(e.message)) setLyricsPct(100)
+      if (/Lyrics engine download failed/.test(e.message)) setLyricsError(e.message)
     })
     return off
   }, [])
@@ -160,6 +177,7 @@ export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props)
         if (s.vocalsDownloading || s.vocalsReady) setVocalsStarting(false)
         if (s.ftDownloading || s.ftVerified) setFtStarting(false)
         if (s.gpuDownloading || s.gpuReady) setGpuStarting(false)
+        if (s.lyricsDownloading || s.lyricsReady) setLyricsStarting(false)
       })
     }
     tick()
@@ -195,6 +213,9 @@ export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props)
   const showFtConfirm = !!engines && settings.htdemucsFt && !engines.ftVerified && !ftBusy
   const showGpuConfirm =
     !!engines && settings.gpuSplit && !!gpuVendor && !engines.gpuReady && !gpuBusy
+  const lyricsBusy = lyricsStarting || (engines?.lyricsDownloading ?? false)
+  const showLyricsConfirm =
+    !!engines && settings.extractLyrics && !engines.lyricsReady && !lyricsBusy
 
   const startVocals = (): void => {
     setVocalsStarting(true)
@@ -215,6 +236,13 @@ export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props)
     setGpuPct(null)
     setGpuError(null)
     void window.stemkit.fetchEngine('gpu')
+  }
+
+  const startLyrics = (): void => {
+    setLyricsStarting(true)
+    setLyricsPct(null)
+    setLyricsError(null)
+    void window.stemkit.fetchEngine('lyrics')
   }
 
   return (
@@ -334,6 +362,63 @@ export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props)
               Changes apply to future splits. Songs you already split keep their current sound —
               split them again to use the new settings.
             </p>
+          </section>
+
+          <section className="pt-5 border-t border-white/[0.06] space-y-5">
+            <SectionHeader label="Lyrics" />
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium">Extract lyrics</p>
+                <p className="text-[11.5px] text-white/40 leading-relaxed mt-0.5">
+                  Transcribes the vocals stem locally into synced lyrics you can follow along
+                  with while playing. Fully offline.
+                </p>
+                <DownloadBar
+                  pct={lyricsPct}
+                  starting={lyricsBusy && lyricsPct === null}
+                  error={lyricsError}
+                />
+                {showLyricsConfirm && (
+                  <ConfirmButton
+                    label={`Download now · ${LYRICS_MODEL_SIZES[settings.lyricsModel]}`}
+                    onClick={startLyrics}
+                  />
+                )}
+              </div>
+              <Toggle
+                on={settings.extractLyrics}
+                disabled={lyricsBusy}
+                loading={lyricsBusy}
+                onClick={() => onChange({ extractLyrics: !settings.extractLyrics })}
+              />
+            </div>
+
+            {settings.extractLyrics && (
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-[13px] font-medium">Model quality</p>
+                <div className="flex shrink-0 rounded-lg bg-white/[0.06] p-0.5 border border-white/[0.08]">
+                  {(
+                    [
+                      { v: 'small' as const, label: 'Fast' },
+                      { v: 'medium' as const, label: 'Balanced' },
+                      { v: 'large-v3' as const, label: 'Best' }
+                    ]
+                  ).map((opt) => (
+                    <button
+                      key={opt.v}
+                      onClick={() => onChange({ lyricsModel: opt.v })}
+                      className={`no-drag px-2.5 h-6 rounded-md text-[12px] font-semibold transition-colors ${
+                        settings.lyricsModel === opt.v
+                          ? 'bg-white text-black'
+                          : 'text-white/45 hover:text-white/80'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           <section className="pt-5 border-t border-white/[0.06] space-y-5">
