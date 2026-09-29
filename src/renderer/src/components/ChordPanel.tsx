@@ -21,7 +21,7 @@ export function ChordPanel({ videoId, duration, getPosition, onSeek }: Props): R
   const [transpose, setTranspose] = useState(0)
   const [useFlats, setUseFlats] = useState(false)
   const [showList, setShowList] = useState(false)
-  const [viewMode, setViewMode] = useState<'grid' | 'diagrams'>('diagrams')
+  const [viewMode, setViewMode] = useState<'grid' | 'diagrams'>('grid')
   const [diagramMode, setDiagramMode] = useState<'animated' | 'summary'>('animated')
   const [tick, setTick] = useState(0)
   const [sourcePref, setSourcePref] = useState<'auto' | 'local' | 'chordify'>('auto')
