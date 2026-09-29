@@ -8,11 +8,13 @@ import {
   venvYtDlp,
   separateScript,
   roformerScript,
+  midiScript,
   modelsDir,
   ensureEngineDeps,
   ensureVocalsEngine,
   ensureFtWeights,
   ensureGpuEngine,
+  ensureMidiEngine,
   detectGpuVendor,
   getStatus,
   ytDlpRuntimeArgs
@@ -750,4 +752,46 @@ export function cancelJob(videoId?: string): void {
 
 export function isBusy(): boolean {
   return jobs.size > 0
+}
+
+export async function exportStemAsMidi(inputWav: string, outputMid: string): Promise<void> {
+  if (!(await ensureEngineDeps())) {
+    throw new Error('Something went wrong with the built-in audio tools. Try reinstalling StemKit.')
+  }
+  const ready = await ensureMidiEngine()
+  if (!ready) throw new Error('MIDI engine is not available — check your connection and try again')
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(venvPython(), [midiScript(), '--input', inputWav, '--out', outputMid], {
+      env: { ...process.env }
+    })
+    let stderrTail = ''
+    let lastError: string | null = null
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderrTail = (stderrTail + chunk.toString()).slice(-2000)
+    })
+    if (child.stdout) {
+      const rl = createInterface({ input: child.stdout })
+      rl.on('line', (line) => {
+        let parsed: { type?: string; message?: string } | null = null
+        try {
+          parsed = JSON.parse(line)
+        } catch {
+          return
+        }
+        if (parsed?.type === 'error') lastError = parsed.message ?? 'MIDI export failed'
+      })
+    }
+    child.on('error', (err) => reject(friendlySpawnError(err)))
+    child.on('close', (code) => {
+      if (code === 0) return resolve()
+      reject(
+        new Error(
+          lastError ||
+            stderrTail.split('\n').filter(Boolean).slice(-2).join(' — ') ||
+            `midi.py exited with code ${code}`
+        )
+      )
+    })
+  })
 }
