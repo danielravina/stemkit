@@ -63,6 +63,10 @@ export interface EngineStatus {
   // gpu torch engine (windows/linux; cuda for nvidia, rocm for amd on linux)
   gpuDownloading: boolean
   gpuReady: boolean
+  // basic-pitch (audio-to-midi transcription), installed on demand the
+  // first time a MIDI export is used
+  midiDownloading: boolean
+  midiReady: boolean
 }
 
 export interface EnvStatus {
@@ -133,6 +137,7 @@ export interface StemKitApi {
   setStemPan(videoId: string, pans: StemPanMap): Promise<void>
   exportStem(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>
   exportAllStems(videoId: string): Promise<{ saved: boolean; path?: string; count?: number }>
+  exportStemMidi(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>
   searchYouTube(query: string): Promise<SearchResult[]>
   startJob(url: string, model?: string, stems?: string[]): Promise<{ started: boolean }>
   pickAudioFile(): Promise<string | null>

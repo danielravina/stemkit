@@ -21,6 +21,7 @@ const api: StemKitApi = {
   setStemPan: (videoId, pans) => ipcRenderer.invoke('song:pan:set', videoId, pans),
   exportStem: (videoId, stem) => ipcRenderer.invoke('stem:export', videoId, stem),
   exportAllStems: (videoId) => ipcRenderer.invoke('stems:export-all', videoId),
+  exportStemMidi: (videoId, stem) => ipcRenderer.invoke('stem:export-midi', videoId, stem),
   searchYouTube: (query) => ipcRenderer.invoke('search:youtube', query),
   startJob: (url, model, stems) => ipcRenderer.invoke('jobs:start', url, model, stems),
   pickAudioFile: () => ipcRenderer.invoke('files:pick-audio'),
