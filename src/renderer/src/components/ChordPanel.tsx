@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import type { ChordsDoc, ChordSegment, ChordSources, ChordifyStatus } from '../../../shared/types'
 import { lookupVoicing, chordColor, activeChord, getDisplayDoc, getSoundingDoc, detectKey, displayLabel } from '../lib/chords'
 import { fmtTime } from '../lib/format'
@@ -21,9 +21,16 @@ export function ChordPanel({ videoId, duration, getPosition, onSeek }: Props): R
   const [transpose, setTranspose] = useState(0)
   const [useFlats, setUseFlats] = useState(false)
   const [showList, setShowList] = useState(false)
+  const [viewMode, setViewMode] = useState<'grid' | 'diagrams'>('diagrams')
+  const [diagramMode, setDiagramMode] = useState<'animated' | 'summary'>('animated')
   const [tick, setTick] = useState(0)
   const [sourcePref, setSourcePref] = useState<'auto' | 'local' | 'chordify'>('auto')
-  const [countdownBeats, setCountdownBeats] = useState(false)
+  const timelineRef = useRef<HTMLDivElement>(null)
+  const didScrollTimelineRef = useRef(false)
+  const changeTimeoutRef = useRef<number | null>(null)
+  const [justChanged, setJustChanged] = useState(false)
+  const prevChordRef = useRef<string | null>(null)
+  const trackedVideoIdRef = useRef(videoId)
 
   const load = useCallback((): void => {
     void window.stemkit.getChordSources(videoId).then(setSources)
@@ -44,12 +51,11 @@ export function ChordPanel({ videoId, duration, getPosition, onSeek }: Props): R
     return () => { off(); off2() }
   }, [videoId, load])
 
-  // follow playback
+  // Refresh the time-synced chord view often enough for a smooth playhead/countdown
+  // without forcing a full React render on every animation frame.
   useEffect(() => {
-    let raf = 0
-    const loop = (): void => { setTick((n) => (n + 1) % 10000); raf = requestAnimationFrame(loop) }
-    raf = requestAnimationFrame(loop)
-    return () => cancelAnimationFrame(raf)
+    const timer = window.setInterval(() => setTick((n) => (n + 1) % 10000), 100)
+    return () => window.clearInterval(timer)
   }, [])
 
   const analyzeLocal = async (): Promise<void> => {
@@ -115,35 +121,119 @@ export function ChordPanel({ videoId, duration, getPosition, onSeek }: Props): R
   })()
 
   // display doc: sounding = doc + transpose, shape = sounding - capo
-  const displayDoc = activeDoc ? getDisplayDoc(activeDoc, transpose, capo) : null
-  const soundingDoc = activeDoc ? getSoundingDoc(activeDoc, transpose) : null
+  const displayDoc = useMemo(
+    () => activeDoc ? getDisplayDoc(activeDoc, transpose, capo) : null,
+    [activeDoc, transpose, capo]
+  )
+  const soundingDoc = useMemo(
+    () => activeDoc ? getSoundingDoc(activeDoc, transpose) : null,
+    [activeDoc, transpose]
+  )
   void tick
   const cur: ChordSegment | null = displayDoc ? activeChord(displayDoc, getPosition()) : null
-  const upcoming = ((): ChordSegment[] => {
-    if (!displayDoc) return []
-    const t = getPosition()
-    const idx = displayDoc.chords.findIndex((c) => t < c.time + c.duration)
-    if (idx < 0) return []
-    const start = cur ? idx + 1 : idx
-    return displayDoc.chords.slice(start, start + 4)
-  })()
+  const progression = displayDoc?.chords.filter((chord) => chord.chord !== 'N') ?? []
+  const curIndex = cur
+    ? progression.findIndex((chord) => chord.time === cur.time && chord.chord === cur.chord)
+    : -1
+  const currentKey = cur ? `${cur.time}:${cur.chord}` : null
+  const summaryChords = progression.filter(
+    (chord, index) => progression.findIndex((candidate) => candidate.chord === chord.chord) === index
+  )
+  const tNow = getPosition()
+  const gridDuration = duration > 0 ? duration : activeDoc?.duration ?? 0
+  const chordifyBpm = activeDoc?.chordifyMeta?.bpm
+  const gridBpm = chordifyBpm && Number.isFinite(chordifyBpm) && chordifyBpm > 0 ? chordifyBpm : 120
+  const gridTempoEstimated = !(chordifyBpm && Number.isFinite(chordifyBpm) && chordifyBpm > 0)
+  const beatsPerBar = Math.min(12, Math.max(1, Math.round(activeDoc?.chordifyMeta?.barLength || 4)))
+  const beatDuration = 60 / gridBpm
+  const gridBeats = useMemo(() => {
+    if (!displayDoc || gridDuration <= 0) return []
+    const cells: { index: number; time: number; measureIndex: number; beatIndex: number; chord: string | null; label: string | null }[] = []
+    const beatCount = Math.ceil(gridDuration / beatDuration)
+    let chordIndex = 0
+    let soundingChord: string | null = null
+    let lastLabeledChord: string | null = null
 
-  // ——— Chord-shift cue: detect when cur changes to pulse + keep prev for slide ———
-  const prevChordRef = useRef<string | null>(null)
-  const [pulseKey, setPulseKey] = useState(0)
-  const [justChanged, setJustChanged] = useState(false)
-  useEffect(() => {
-    const curName = cur?.chord ?? null
-    if (curName && prevChordRef.current && curName !== prevChordRef.current) {
-      setPulseKey((k) => k + 1)
-      setJustChanged(true)
-      const t = window.setTimeout(() => setJustChanged(false), 620)
-      return () => window.clearTimeout(t)
+    for (let index = 0; index < beatCount; index += 1) {
+      const time = index * beatDuration
+      while (chordIndex < displayDoc.chords.length && displayDoc.chords[chordIndex].time + displayDoc.chords[chordIndex].duration <= time) {
+        chordIndex += 1
+      }
+      const segment = displayDoc.chords[chordIndex]
+      if (segment && segment.time <= time && segment.chord !== 'N') soundingChord = segment.chord
+      const changed = soundingChord !== null && soundingChord !== lastLabeledChord
+      cells.push({
+        index,
+        time,
+        measureIndex: Math.floor(index / beatsPerBar),
+        beatIndex: index % beatsPerBar,
+        chord: soundingChord,
+        label: changed ? soundingChord : null
+      })
+      if (changed) lastLabeledChord = soundingChord
     }
-    if (curName) prevChordRef.current = curName
-  }, [cur?.chord])
-  // on video switch reset
-  useEffect(() => { prevChordRef.current = null; setJustChanged(false) }, [videoId])
+    return cells
+  }, [displayDoc, gridDuration, beatDuration, beatsPerBar])
+  const gridMeasures = useMemo(() => {
+    const measureCount = Math.ceil(gridBeats.length / beatsPerBar)
+    return Array.from({ length: measureCount }, (_, measureIndex) => ({
+      index: measureIndex,
+      beats: gridBeats.slice(measureIndex * beatsPerBar, (measureIndex + 1) * beatsPerBar)
+    }))
+  }, [gridBeats, beatsPerBar])
+  const currentBeatIndex = gridBeats.length > 0
+    ? Math.min(gridBeats.length - 1, Math.max(0, Math.floor(tNow / beatDuration)))
+    : -1
+  const currentMeasureIndex = currentBeatIndex >= 0 ? Math.floor(currentBeatIndex / beatsPerBar) : -1
+
+  // Chordify's animated diagram view follows the current segment, not just its
+  // chord name, so repeated chords still trigger a smooth change/scroll.
+  useEffect(() => {
+    if (trackedVideoIdRef.current !== videoId) {
+      trackedVideoIdRef.current = videoId
+      prevChordRef.current = currentKey
+      didScrollTimelineRef.current = false
+      setJustChanged(false)
+      return
+    }
+    if (currentKey && prevChordRef.current && currentKey !== prevChordRef.current) {
+      setJustChanged(true)
+      if (changeTimeoutRef.current !== null) window.clearTimeout(changeTimeoutRef.current)
+      changeTimeoutRef.current = window.setTimeout(() => {
+        setJustChanged(false)
+        changeTimeoutRef.current = null
+      }, 360)
+    }
+    prevChordRef.current = currentKey
+  }, [videoId, currentKey])
+
+  useEffect(() => () => {
+    if (changeTimeoutRef.current !== null) window.clearTimeout(changeTimeoutRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (viewMode === 'grid') {
+      if (currentMeasureIndex < 0) return
+      const timeline = timelineRef.current
+      const measure = timeline?.querySelector<HTMLElement>(`[data-measure-index="${currentMeasureIndex}"]`)
+      if (!timeline || !measure) return
+      const timelineRect = timeline.getBoundingClientRect()
+      const measureRect = measure.getBoundingClientRect()
+      const left = timeline.scrollLeft + measureRect.left - timelineRect.left - (timeline.clientWidth - measureRect.width) / 2
+      timeline.scrollTo({ left, behavior: didScrollTimelineRef.current ? 'smooth' : 'auto' })
+      didScrollTimelineRef.current = true
+      return
+    }
+    if (diagramMode !== 'animated' || curIndex < 0) return
+    const timeline = timelineRef.current
+    const card = timeline?.querySelector<HTMLElement>(`[data-chord-index="${curIndex}"]`)
+    if (!timeline || !card) return
+    const timelineRect = timeline.getBoundingClientRect()
+    const cardRect = card.getBoundingClientRect()
+    const left = timeline.scrollLeft + cardRect.left - timelineRect.left - (timeline.clientWidth - cardRect.width) / 2
+    timeline.scrollTo({ left, behavior: didScrollTimelineRef.current ? 'smooth' : 'auto' })
+    didScrollTimelineRef.current = true
+  }, [viewMode, diagramMode, currentKey, curIndex, currentMeasureIndex])
 
   const curVoicing = ((): ReturnType<typeof lookupVoicing> => {
     if (!cur) return null
@@ -172,15 +262,13 @@ export function ChordPanel({ videoId, duration, getPosition, onSeek }: Props): R
     return displayLabel(s, useFlats)
   }
 
-  // countdown to next chord — live
-  const nextChord = upcoming[0] ?? null
-  const tNow = getPosition()
+  // Live next-chord timing and current segment progress.
+  const nextChord = curIndex >= 0
+    ? progression[curIndex + 1] ?? null
+    : progression.find((chord) => chord.time > tNow) ?? null
   const timeToNext = nextChord ? Math.max(0, nextChord.time - tNow) : null
   const nextProgress = cur ? Math.min(1, Math.max(0, (tNow - cur.time) / Math.max(0.2, cur.duration))) : 0
   const imminent = timeToNext !== null && timeToNext < 1.6
-  const warning = timeToNext !== null && timeToNext < 3.0
-  const bpm = activeDoc?.chordifyMeta?.bpm ?? null
-  const beatsToNext = bpm && timeToNext !== null ? timeToNext / (60 / bpm) : null
 
   const chordifyConnected = !!cStatus?.connected
   const sourceLabel = activeDoc?.source === 'chordify' ? 'Chordify' : activeDoc?.source === 'local' ? 'Local' : null
@@ -325,99 +413,234 @@ export function ChordPanel({ videoId, duration, getPosition, onSeek }: Props): R
         )}
       </div>
 
-      {/* big current + next — enlarged diagrams, exact Chordify copy for next */}
+      {/* Chordify-style chord diagrams: animated playback follows the active chord;
+          summary shows the unique voicings used in this song. */}
       {hasDoc && (
         <>
-          <div className="grid grid-cols-1 lg:grid-cols-[1.28fr_1fr] gap-4 items-stretch">
-            {/* NOW — enlarged + chord-shift cues */}
-            <div className={`rounded-xl border p-4 flex items-center gap-5 min-h-[168px] relative overflow-hidden transition-colors duration-300 ${justChanged ? 'bg-violet-500/15 border-violet-400/30' : imminent ? 'bg-amber-500/10 border-amber-400/25' : 'bg-black/30 border-white/10'}`}>
-              {/* progress through current chord — fills as shift approaches, like Chordify's bar */}
-              {cur && (
-                <div className="absolute left-0 right-0 bottom-0 h-[3px] bg-white/10">
-                  <div className="h-full bg-violet-400 transition-none" style={{ width: `${nextProgress * 100}%`, opacity: justChanged ? 0.95 : 0.72 }} />
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-white/35">Chord view</span>
+            <div className="flex items-center gap-1 rounded-full border border-white/10 bg-black/25 p-1" role="tablist" aria-label="Chord view">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={viewMode === 'grid'}
+                onClick={() => { setViewMode('grid'); didScrollTimelineRef.current = false }}
+                className={`no-drag rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === 'grid' ? 'bg-white text-black' : 'text-white/50 hover:text-white'}`}
+              >
+                Grid
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={viewMode === 'diagrams'}
+                onClick={() => { setViewMode('diagrams'); didScrollTimelineRef.current = false }}
+                className={`no-drag rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === 'diagrams' ? 'bg-white text-black' : 'text-white/50 hover:text-white'}`}
+              >
+                Diagrams
+              </button>
+            </div>
+          </div>
+
+          {viewMode === 'grid' ? (
+            <div className="rounded-2xl border border-white/10 bg-[#111116] p-3 sm:p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold text-white/85">Beat grid</div>
+                  <div className="mt-0.5 text-[11px] text-white/35">One square per beat · chord names appear when they change</div>
                 </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[11px] uppercase tracking-widest text-white/30">Now {sourceLabel ? `· ${sourceLabel}` : ''}{capo>0 ? ` · capo ${capo}` : ''}</span>
-                  {justChanged && <span key={pulseKey} className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500 text-white font-bold animate-pulse">shift!</span>}
-                  {nextChord && !justChanged && (
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-semibold border ${imminent ? 'bg-amber-400 text-black border-amber-300 animate-pulse' : warning ? 'bg-amber-500/20 text-amber-200 border-amber-400/30' : 'bg-white/10 text-white/50 border-white/10'}`}>
-                      → {shapeLabel(nextChord.chord)} in {timeToNext !== null && timeToNext < 10 ? `${timeToNext.toFixed(1)}s` : fmtTime(nextChord.time)}
-                      {countdownBeats && beatsToNext !== null ? ` · ${beatsToNext.toFixed(1)} beats` : ''}
-                    </span>
-                  )}
-                </div>
-                <div
-                  key={cur ? cur.chord + String(pulseKey) : '—'}
-                  className={`${justChanged ? 'animate-[pulse_0.55s_ease]' : ''} text-5xl font-extrabold tracking-tight truncate mt-1`}
-                  style={{ color: cur ? chordColor(cur.chord) : 'rgba(255,255,255,0.5)' }}
-                >
-                  {cur ? shapeLabel(cur.chord) : '—'}
-                </div>
-                {cur && (
-                  <div className="text-xs text-white/40 font-mono mt-1 flex items-center gap-2 flex-wrap">
-                    <span>{fmtTime(cur.time)} · {cur.duration.toFixed(1)}s</span>
-                    {cur.score < 0.55 && <span className="text-amber-300">low confidence</span>}
-                    {activeDoc?.source === 'chordify' && <span className="text-emerald-300">chordify</span>}
-                    {capo>0 && soundingDoc && (()=>{ const s = activeChord(soundingDoc, getPosition()); return s ? <span className="text-amber-200">sounding {displayLabel(s.chord, useFlats)}</span> : null })()}
-                  </div>
-                )}
-                <div className="text-[11px] text-white/25 mt-2 hidden sm:flex items-center gap-2">
-                  <span>Diagrams sync to master clock</span>
-                  <span className="w-1 h-1 rounded-full bg-white/20" />
-                  <label className="flex items-center gap-1 cursor-pointer no-drag">
-                    <input type="checkbox" checked={countdownBeats} onChange={(e) => setCountdownBeats(e.target.checked)} className="w-3 h-3" />
-                    <span className="text-white/40">beats</span>
-                  </label>
-                </div>
+                <span className="rounded-full bg-white/5 px-2.5 py-1 text-[11px] font-mono text-white/50">
+                  {beatsPerBar}/4 · {gridBpm} BPM{gridTempoEstimated ? ' · estimated' : ''}
+                </span>
               </div>
-              <div className={`shrink-0 transition-transform duration-300 ${justChanged ? 'scale-[1.03]' : 'scale-100'} ${imminent ? 'ring-2 ring-amber-400/30 rounded-xl' : ''}`}>
-                {curVoicing ? (
-                  <Fretboard voicing={curVoicing} capo={capo} width={212} height={148} />
-                ) : (
-                  <div className="w-[212px] h-[148px] rounded-xl bg-white/5 flex items-center justify-center text-white/20 text-xs">No diagram</div>
-                )}
+              {gridMeasures.length > 0 ? (
+                <div ref={timelineRef} className="chordify-timeline flex gap-2 overflow-x-auto pb-2" aria-label="Chord beat grid">
+                  {gridMeasures.map((measure) => (
+                    <div
+                      key={measure.index}
+                      data-measure-index={measure.index}
+                      className={`flex shrink-0 flex-col gap-2 rounded-xl border p-2 transition-colors ${measure.index === currentMeasureIndex ? 'border-white/25 bg-white/[0.045]' : 'border-white/[0.08] bg-black/15'}`}
+                    >
+                      <div className="flex items-center justify-between gap-4 px-1">
+                        <span className="text-[10px] font-semibold uppercase tracking-widest text-white/40">Bar {measure.index + 1}</span>
+                        <span className="text-[10px] font-mono text-white/30">{fmtTime(measure.beats[0]?.time ?? 0)}</span>
+                      </div>
+                      <div className="flex gap-1.5" role="group" aria-label={`Bar ${measure.index + 1}`}>
+                        {measure.beats.map((beat) => {
+                          const isCurrentBeat = beat.index === currentBeatIndex
+                          const chord = beat.chord
+                          return (
+                            <button
+                              key={beat.index}
+                              type="button"
+                              onClick={() => onSeek(beat.time)}
+                              title={`${chord ? `${shapeLabel(chord)} · ` : ''}${fmtTime(beat.time)} · beat ${beat.beatIndex + 1}`}
+                              aria-label={`Bar ${measure.index + 1}, beat ${beat.beatIndex + 1}${beat.label ? `, ${shapeLabel(beat.label)} chord change` : chord ? `, ${shapeLabel(chord)} continues` : ', no chord detected'}${isCurrentBeat ? ', current beat' : ''}`}
+                              aria-current={isCurrentBeat ? 'time' : undefined}
+                              className={`no-drag relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-md border text-center transition-[transform,box-shadow,background-color] duration-150 sm:h-14 sm:w-14 ${isCurrentBeat ? 'z-10 scale-105 border-white/90 bg-[#09090c] text-white shadow-[0_0_0_2px_rgba(255,255,255,.18)]' : chord ? 'border-black/20 text-black hover:brightness-110' : 'border-white/10 bg-white/[0.04] text-white/35 hover:bg-white/[0.08]'}`}
+                              style={!isCurrentBeat && chord ? { backgroundColor: chordColor(chord), opacity: 0.72 } : undefined}
+                            >
+                              <span className="absolute left-1 top-0.5 text-[9px] font-mono opacity-55">{beat.beatIndex + 1}</span>
+                              {beat.label && <span className="max-w-full truncate px-1 pt-2 text-[11px] font-bold">{shapeLabel(beat.label)}</span>}
+                              {chord && !beat.label && <span className="pt-2 text-[10px] font-semibold opacity-35">·</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-8 text-center text-sm text-white/35">Beat grid unavailable for this song.</div>
+              )}
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-white/35">
+                <span>Dark square = current beat · blank beat keeps the previous chord sounding</span>
+                {gridTempoEstimated && <span>Offline analysis has no tempo data; grid uses an approximate 120 BPM.</span>}
               </div>
             </div>
-
-            {/* NEXT — exact Chordify copy: each next chord gets its own diagram, with imminent pulse */}
-            <div className="rounded-xl bg-white/5 border border-white/10 p-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] uppercase tracking-widest text-white/30">Next — tap to jump</span>
-                {nextChord && <span className={`text-[11px] font-mono px-2 py-0.5 rounded-full ${imminent ? 'bg-amber-400 text-black animate-pulse' : 'bg-white/10 text-white/40'}`}>{timeToNext !== null ? `${timeToNext.toFixed(1)}s` : ''} → {shapeLabel(nextChord.chord)}</span>}
+          ) : (
+            <>
+              <div className="flex items-center justify-end">
+                <div className="flex items-center gap-1 rounded-full border border-white/10 bg-black/25 p-1" role="tablist" aria-label="Diagram layout">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={diagramMode === 'animated'}
+                    onClick={() => setDiagramMode('animated')}
+                    className={`no-drag rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${diagramMode === 'animated' ? 'bg-white text-black' : 'text-white/50 hover:text-white'}`}
+                  >
+                    Animated
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={diagramMode === 'summary'}
+                    onClick={() => setDiagramMode('summary')}
+                    className={`no-drag rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${diagramMode === 'summary' ? 'bg-white text-black' : 'text-white/50 hover:text-white'}`}
+                  >
+                    Summary
+                  </button>
+                </div>
               </div>
-              <div className="grid grid-cols-4 gap-2">
-                {upcoming.length === 0 ? (
-                  <span className="col-span-4 text-sm text-white/25 py-6 text-center">— end —</span>
-                ) : (
-                  upcoming.map((c, i) => {
-                    const v = lookupVoicing(c.chord)
-                    const isNext = i === 0
-                    const isImminentCard = isNext && imminent
+
+              {diagramMode === 'animated' ? (
+            <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-1 lg:grid-cols-[1.08fr_.92fr] gap-3 items-stretch">
+                <div className={`relative overflow-hidden rounded-2xl border bg-[#111116] p-4 sm:p-5 transition-colors duration-300 ${justChanged ? 'border-white/25' : 'border-white/10'}`}>
+                  <div className="absolute inset-x-0 bottom-0 h-1 bg-white/5">
+                    <div className="h-full bg-violet-400/80" style={{ width: `${nextProgress * 100}%` }} />
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/45">Current chord</span>
+                    <span className="text-xs font-mono text-white/35">{cur ? fmtTime(tNow) : '—'}{sourceLabel ? ` · ${sourceLabel}` : ''}</span>
+                  </div>
+                  {cur ? (
+                    <div key={currentKey} className={`mt-2 flex min-h-[190px] items-center justify-between gap-4 ${justChanged ? 'chordify-change-in' : ''}`}>
+                      <div className="min-w-0">
+                        <div className="truncate text-5xl sm:text-6xl font-bold tracking-tight" style={{ color: chordColor(cur.chord) }}>
+                          {shapeLabel(cur.chord)}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-mono text-white/45">
+                          <span>{fmtTime(cur.time)} · {cur.duration.toFixed(1)}s</span>
+                          {cur.score < 0.55 && <span className="text-amber-300">low confidence</span>}
+                          {capo > 0 && soundingDoc && (() => {
+                            const sounding = activeChord(soundingDoc, tNow)
+                            return sounding ? <span className="text-amber-200">sounding {displayLabel(sounding.chord, useFlats)}</span> : null
+                          })()}
+                        </div>
+                      </div>
+                      <div className="shrink-0">
+                        {curVoicing ? <Fretboard voicing={curVoicing} capo={capo} width={236} height={174} /> : (
+                          <div className="flex h-[174px] w-[236px] items-center justify-center text-sm text-white/25">No diagram</div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex min-h-[190px] items-center justify-center text-sm text-white/35">No chord at this time</div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-[#111116] p-4 sm:p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/45">Next chord</span>
+                    {timeToNext !== null && <span className={`rounded-full px-2.5 py-1 text-xs font-mono ${imminent ? 'bg-white text-black' : 'bg-white/5 text-white/50'}`}>in {timeToNext.toFixed(1)}s</span>}
+                  </div>
+                  {nextChord ? (
+                    <div key={`${nextChord.time}:${nextChord.chord}`} className={`mt-2 flex min-h-[190px] items-center justify-between gap-4 ${justChanged ? 'chordify-next-in' : ''}`}>
+                      <div className="min-w-0">
+                        <div className="truncate text-4xl sm:text-5xl font-bold tracking-tight" style={{ color: chordColor(nextChord.chord) }}>
+                          {shapeLabel(nextChord.chord)}
+                        </div>
+                        <div className="mt-2 text-xs font-mono text-white/40">starts {fmtTime(nextChord.time)}</div>
+                      </div>
+                      {lookupVoicing(nextChord.chord) ? (
+                        <Fretboard voicing={lookupVoicing(nextChord.chord)!} capo={capo} width={210} height={158} />
+                      ) : (
+                        <div className="flex h-[158px] w-[210px] items-center justify-center text-sm text-white/25">No diagram</div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex min-h-[190px] items-center justify-center text-sm text-white/35">End of song</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-[#111116] p-3 sm:p-4">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">Progression · follows playback</span>
+                  <span className="text-[11px] text-white/30">Select a chord to jump</span>
+                </div>
+                <div ref={timelineRef} className="chordify-timeline flex gap-2 overflow-x-auto pb-2" aria-label="Chord progression">
+                  {progression.map((chord, index) => {
+                    const isCurrent = index === curIndex
+                    const isNext = index === curIndex + 1
+                    const fill = isCurrent ? nextProgress * 100 : isNext ? 0 : 100
+                    const cardWidth = Math.max(92, Math.min(170, chord.duration * 38))
                     return (
                       <button
-                        key={i}
-                        onClick={() => onSeek(c.time + 0.02)}
-                        className={`no-drag rounded-xl border flex flex-col items-center gap-1 py-2 px-1 transition-all ${isImminentCard ? 'bg-amber-400 border-amber-300 scale-[1.04] shadow-lg shadow-amber-500/20 animate-pulse' : isNext && warning ? 'bg-white border-white/20' : 'bg-black/40 border-white/10 hover:border-white/20 hover:bg-black/60'}`}
+                        key={`${chord.time}:${chord.chord}`}
+                        type="button"
+                        data-chord-index={index}
+                        aria-current={isCurrent ? 'time' : undefined}
+                        aria-label={`${shapeLabel(chord.chord)} at ${fmtTime(chord.time)}${isCurrent ? ', current chord' : ''}`}
+                        onClick={() => onSeek(chord.time + 0.02)}
+                        style={{ width: `${cardWidth}px` }}
+                        className={`no-drag relative flex shrink-0 flex-col items-center justify-center rounded-xl border px-3 py-3 text-left transition-[background-color,border-color,transform] duration-200 ${isCurrent ? 'scale-[1.02] border-white/70 bg-white text-[#17171b] shadow-lg shadow-black/25' : isNext ? 'border-white/20 bg-white/[0.07] text-white hover:bg-white/10' : 'border-white/[0.08] bg-black/20 text-white/75 hover:border-white/20 hover:bg-white/[0.06]'}`}
                       >
-                        <span className={`text-[12px] font-extrabold leading-none truncate w-full text-center ${isImminentCard ? 'text-black' : ''}`} style={{ color: isImminentCard ? undefined : chordColor(c.chord) }}>{shapeLabel(c.chord)}</span>
-                        <span className={`text-[10px] font-mono ${isImminentCard ? 'text-black/60' : 'text-white/35'}`}>{isNext && timeToNext !== null ? `in ${timeToNext.toFixed(1)}s` : fmtTime(c.time)}</span>
-                        <div className="mt-1">
-                          {v ? (
-                            <Fretboard voicing={v} capo={capo} width={86} height={68} />
-                          ) : (
-                            <span className="text-[10px] text-white/20">—</span>
-                          )}
+                        <span className={`w-full text-center text-[10px] font-mono ${isCurrent ? 'text-black/45' : 'text-white/35'}`}>{fmtTime(chord.time)}</span>
+                        <span className="mt-1 w-full truncate text-center text-lg font-bold" style={{ color: isCurrent ? undefined : chordColor(chord.chord) }}>{shapeLabel(chord.chord)}</span>
+                        <span className={`mt-1 w-full text-center text-[10px] font-mono ${isCurrent ? 'text-black/45' : 'text-white/35'}`}>{chord.duration.toFixed(1)}s</span>
+                        <div className={`mt-2 h-1 w-full overflow-hidden rounded-full ${isCurrent ? 'bg-black/10' : 'bg-white/10'}`}>
+                          <div className={`h-full ${isCurrent ? 'bg-black/50' : 'bg-white/50'}`} style={{ width: `${fill}%` }} />
                         </div>
                       </button>
                     )
-                  })
-                )}
+                  })}
+                </div>
               </div>
-              <div className="text-[11px] text-white/30 leading-snug">Left bar fills as the chord plays — <b className={imminent ? 'text-amber-300' : 'text-white/50'}>{nextChord ? `${shapeLabel(nextChord.chord)} in ${timeToNext !== null ? timeToNext.toFixed(1) : '—'}s` : 'end'}</b>. Next card pulses <span className="text-amber-300">amber</span> at 1.6s like Chordify · Tap to jump · Play to auto-follow</div>
             </div>
-          </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {summaryChords.map((chord) => {
+                const voicing = lookupVoicing(chord.chord)
+                const isCurrent = cur?.chord === chord.chord
+                return (
+                  <button
+                    key={chord.chord}
+                    type="button"
+                    aria-label={`Jump to ${shapeLabel(chord.chord)}`}
+                    onClick={() => onSeek(chord.time + 0.02)}
+                    className={`no-drag flex flex-col items-center rounded-xl border p-3 transition-colors ${isCurrent ? 'border-white/60 bg-white text-black' : 'border-white/10 bg-[#111116] hover:border-white/25 hover:bg-white/[0.06]'}`}
+                  >
+                    <span className="text-lg font-bold" style={{ color: isCurrent ? undefined : chordColor(chord.chord) }}>{shapeLabel(chord.chord)}</span>
+                    {voicing ? <Fretboard voicing={voicing} capo={capo} width={150} height={120} /> : <span className="py-8 text-xs text-white/25">No diagram</span>}
+                    <span className={`mt-1 text-[10px] font-mono ${isCurrent ? 'text-black/50' : 'text-white/35'}`}>first at {fmtTime(chord.time)}</span>
+                  </button>
+                )
+                  })}
+                </div>
+              )}
+            </>
+          )}
 
           <ChordStrip doc={displayDoc} duration={duration} getPosition={getPosition} onSeek={onSeek} />
 

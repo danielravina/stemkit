@@ -42,6 +42,55 @@ body,
   background: transparent;
 }
 
+.chordify-timeline {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  mask-image: linear-gradient(to right, transparent, black 1.5%, black 98.5%, transparent);
+}
+
+.chordify-change-in {
+  animation: chordifyChangeIn 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.chordify-next-in {
+  animation: chordifyNextIn 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes chordifyChangeIn {
+  from {
+    opacity: 0.55;
+    transform: translateY(7px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes chordifyNextIn {
+  from {
+    opacity: 0.6;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chordify-change-in,
+  .chordify-next-in {
+    animation: none;
+  }
+
+  .chordify-timeline {
+    scroll-behavior: auto;
+  }
+}
+
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
