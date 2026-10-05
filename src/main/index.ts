@@ -31,7 +31,7 @@ import {
 } from './env'
 import { loadSettings, saveSettings } from './settings'
 import { loadSongs, removeSong, stemBuffers, stemsDir, stemsFor, mixWavPath, AUDIO_EXTENSIONS } from './library'
-import { startJob, startLocalJob, cancelJob, searchYouTube } from './pipeline'
+import { startJob, startLocalJob, cancelJob, searchYouTube, exportStemAsMidi } from './pipeline'
 import { initUpdater } from './updater'
 import { runSmoke } from './smoke'
 import { getThumb, clearThumbMemo } from './thumbs'
@@ -290,6 +290,20 @@ app.whenReady().then(async () => {
     } else {
       copyFileSync(file, result.filePath)
     }
+    return { saved: true, path: result.filePath }
+  })
+
+  ipcMain.handle('stem:export-midi', async (_e, videoId: string, stem: string) => {
+    const song = loadSongs().find((s) => s.videoId === videoId)
+    const file = join(stemsDir(videoId), `${stem}.wav`)
+    if (!existsSync(file)) throw new Error(`Missing stem ${stem}`)
+    const result = await dialog.showSaveDialog({
+      title: `Export ${stem} as MIDI`,
+      defaultPath: join(app.getPath('downloads'), `${sanitizeName(song?.title ?? videoId)} - ${stem}.mid`),
+      filters: [{ name: 'MIDI', extensions: ['mid'] }]
+    })
+    if (result.canceled || !result.filePath) return { saved: false }
+    await exportStemAsMidi(file, result.filePath)
     return { saved: true, path: result.filePath }
   })
 

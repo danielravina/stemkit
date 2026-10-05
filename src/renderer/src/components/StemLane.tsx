@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { StemId } from '../../../shared/types'
-import { DownloadIcon } from './Icons'
+import { DownloadIcon, MidiIcon } from './Icons'
 
 export interface StemMeta {
   id: StemId
@@ -44,6 +44,8 @@ interface Props {
   onVolume: (v: number) => void
   onSeek: (seconds: number) => void
   onExport?: () => void
+  onExportMidi?: () => void
+  midiBusy?: boolean
 }
 
 export function StemLane({
@@ -59,7 +61,9 @@ export function StemLane({
   onToggleSolo,
   onVolume,
   onSeek,
-  onExport
+  onExport,
+  onExportMidi,
+  midiBusy
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const peaks = useMemo(() => (buffer ? computePeaks(buffer) : null), [buffer])
@@ -181,6 +185,25 @@ export function StemLane({
           className="no-drag w-6 h-6 rounded-md bg-white/5 hover:bg-white/10 text-white/40 hover:text-white flex items-center justify-center transition-colors shrink-0"
         >
           <DownloadIcon className="w-3.5 h-3.5" />
+        </button>
+      )}
+
+      {onExportMidi && (
+        <button
+          onClick={onExportMidi}
+          disabled={midiBusy}
+          title={
+            midiBusy
+              ? 'Transcribing to MIDI…'
+              : 'Export as MIDI (audio-to-note transcription — best on piano, guitar, bass; noisier on drums or vocals)'
+          }
+          className="no-drag w-6 h-6 rounded-md bg-white/5 hover:bg-white/10 text-white/40 hover:text-white flex items-center justify-center transition-colors shrink-0 disabled:opacity-40 disabled:cursor-wait"
+        >
+          {midiBusy ? (
+            <span className="w-3 h-3 rounded-full border-2 border-white/25 border-t-white/80 animate-spin" />
+          ) : (
+            <MidiIcon className="w-3.5 h-3.5" />
+          )}
         </button>
       )}
     </div>

@@ -117,6 +117,13 @@ export function roformerScript(): string {
   return join(app.getAppPath(), 'python', 'roformer.py')
 }
 
+export function midiScript(): string {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, 'python', 'midi.py')
+  }
+  return join(app.getAppPath(), 'python', 'midi.py')
+}
+
 export function modelsDir(): string {
   return join(userDataDir(), 'models')
 }
@@ -789,6 +796,98 @@ export function ensureFtWeights(onProgress?: (pct: number) => void): Promise<boo
   return ftWeightsPromise.then(detach)
 }
 
+/* MIDI export (basic-pitch, onnx backend — avoids pulling in tensorflow
+   alongside the existing torch stack). The onnx model file itself ships
+   inside the pip package (~230KB); the ~300MB is basic-pitch's dependency
+   tree (librosa, onnxruntime, scipy, numba). Installed into the same venv
+   as everything else, on demand, the first time a MIDI export is used */
+let midiEnginePromise: Promise<boolean> | null = null
+const midiProgressListeners = new Set<(pct: number) => void>()
+
+function midiMarkerPath(): string {
+  return join(venvDir(), '.midi-ready')
+}
+
+export function midiEngineReady(): boolean {
+  return existsSync(midiMarkerPath())
+}
+
+export function ensureMidiEngine(onProgress?: (pct: number) => void): Promise<boolean> {
+  if (onProgress) midiProgressListeners.add(onProgress)
+  const detach = (): boolean => {
+    if (onProgress) midiProgressListeners.delete(onProgress)
+    return true
+  }
+  if (midiEngineReady()) {
+    detach()
+    return Promise.resolve(true)
+  }
+  if (!midiEnginePromise) {
+    midiEnginePromise = (async () => {
+      sendEnvEvent('Downloading the MIDI engine (~300MB, one time)')
+      // pip resolves ~14 wheels for this extra; there's no single clean
+      // percentage across them, so approximate progress by counting
+      // packages as pip starts collecting each one
+      const ESTIMATED_PACKAGES = 14
+      let collected = 0
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(venvPython(), [
+          '-m',
+          'pip',
+          'install',
+          '--progress-bar',
+          'off',
+          'basic-pitch[onnx]',
+          // resampy (a basic-pitch dependency) still imports pkg_resources,
+          // which setuptools removed in 81 — pin below that so it stays
+          // importable
+          'setuptools<81'
+        ])
+        let lastErr = ''
+        child.stdout?.on('data', (chunk: Buffer) => {
+          for (const line of chunk.toString().split('\n')) {
+            const t = line.trim()
+            if (!/^Collecting/i.test(t)) continue
+            collected += 1
+            const pct = Math.min(95, Math.round((collected / ESTIMATED_PACKAGES) * 100))
+            sendEnvEvent(`MIDI engine: ${pct}%`)
+            for (const listener of midiProgressListeners) listener(pct)
+          }
+        })
+        child.stderr?.on('data', (chunk: Buffer) => {
+          lastErr = chunk.toString().trim()
+          if (lastErr.startsWith('ERROR')) sendEnvEvent(lastErr.slice(0, 200), 'error')
+        })
+        child.on('close', (code) =>
+          code === 0
+            ? resolve()
+            : reject(
+                new Error(
+                  `MIDI engine install failed (${code})${lastErr ? `: ${lastErr.slice(0, 200)}` : ''}`
+                )
+              )
+        )
+        child.on('error', reject)
+      })
+      writeFileSync(midiMarkerPath(), JSON.stringify({ createdAt: Date.now() }))
+      for (const listener of midiProgressListeners) listener(100)
+      sendEnvEvent('MIDI engine ready', 'success')
+      return true
+    })()
+      .catch((err) => {
+        sendEnvEvent(
+          `MIDI engine install failed: ${err instanceof Error ? err.message : String(err)}`,
+          'error'
+        )
+        return false
+      })
+      .finally(() => {
+        midiEnginePromise = null
+      })
+  }
+  return midiEnginePromise.then(detach)
+}
+
 /* GPU builds of torch. The default bootstrap installs the CPU wheel (on
    linux pinned to the cpu index, since the default linux wheel would
    otherwise pull CUDA deps for everyone); these swap in on demand when the
@@ -1074,7 +1173,9 @@ export function engineStatus(): EngineStatus {
     ftDownloading: ftWeightsPromise !== null,
     ftVerified,
     gpuDownloading: gpuEnginePromise !== null,
-    gpuReady: SUPPORTS_GPU && gpuInfo === true
+    gpuReady: SUPPORTS_GPU && gpuInfo === true,
+    midiDownloading: midiEnginePromise !== null,
+    midiReady: midiEngineReady()
   }
 }
 
