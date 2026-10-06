@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { app, BrowserWindow, net } from 'electron'
 import type { EngineStatus, GpuVendor } from '../shared/types'
+import { resolveDataDir } from './data-dir'
 
 export interface ToolInfo {
   found: boolean
@@ -29,7 +30,7 @@ const state: EnvState = {
 }
 
 export function userDataDir(): string {
-  return app.getPath('userData')
+  return resolveDataDir(process.env, app.getPath('userData'))
 }
 
 const IS_WIN = process.platform === 'win32'

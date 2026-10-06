@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "node scripts/run.cjs dev",
     "build": "node scripts/run.cjs build",
+    "test": "node --test --experimental-strip-types src/main/data-dir.test.ts",
     "typecheck:node": "node scripts/run.cjs typecheck:node",
     "typecheck:web": "node scripts/run.cjs typecheck:web",
     "typecheck": "node scripts/run.cjs typecheck",

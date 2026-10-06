@@ -105,6 +105,7 @@ video iframe (muted) + Web Audio stem playback · master clock = the audio itsel
 ## Notes
 
 - Downloading audio from YouTube violates their ToS for public products — keep this personal.
+- Want the data somewhere else (venv, models, songs, library)? Start the app with `STEMKIT_DATA_DIR=/path/to/folder` set. Unset keeps the default app folder.
 - yt-dlp breaks occasionally when YouTube changes things; the error dialog offers a one-click update (updates `yt-dlp` + the challenge solver together).
 
 ## Privacy
