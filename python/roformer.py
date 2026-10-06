@@ -1,4 +1,5 @@
 import argparse
+import gc
 import json
 import os
 import struct
@@ -9,6 +10,22 @@ import wave
 
 import numpy as np
 import torch
+
+
+def release_device_memory(device):
+    """torch's caching allocators keep blocks that refcounts already dropped,
+    so a fallback that loads a second copy of the engine gets charged for the
+    same ram twice — which is how one gpu failure turns into an out-of-memory
+    on the retry"""
+    try:
+        if device == "cuda" and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif device == "mps" and getattr(torch.backends, "mps", None):
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+    except Exception:
+        pass
+
 
 CKPT_NAME = "MelBandRoformer.ckpt"
 CKPT_URL = "https://huggingface.co/KimberleyJSN/melbandroformer/resolve/main/MelBandRoformer.ckpt"
@@ -92,16 +109,19 @@ def load_wav(path):
 def save_wav_f32(path, data, sr):
     """write a 32-bit float wav (fmt tag 3); values above 1.0 are preserved"""
     channels, _ = data.shape
-    payload = data.T.astype("<f4").tobytes()
+    # one transposed contiguous copy written straight from memory: building a
+    # bytes payload first would hold a second full copy of the stem in ram
+    block = np.ascontiguousarray(data.T, dtype="<f4")
+    size = block.nbytes
     block_align = channels * 4
-    header = b"RIFF" + struct.pack("<I", 36 + len(payload)) + b"WAVE"
+    header = b"RIFF" + struct.pack("<I", 36 + size) + b"WAVE"
     header += b"fmt " + struct.pack(
         "<IHHIIHH", 16, 3, channels, sr, sr * block_align, block_align, 32
     )
-    header += b"data" + struct.pack("<I", len(payload))
+    header += b"data" + struct.pack("<I", size)
     with open(path, "wb") as f:
         f.write(header)
-        f.write(payload)
+        block.tofile(f)
 
 
 def download_checkpoint(dest):
@@ -163,6 +183,12 @@ def load_model(ckpt_path, device, use_half):
     if isinstance(ckpt, dict) and "state_dict" in ckpt:
         ckpt = ckpt["state_dict"]
     model.load_state_dict(ckpt, strict=True)
+    # the checkpoint is a second full copy of the weights sitting next to the
+    # model that just consumed them: ~900MB of ram held for nothing through
+    # the whole separation, which is often the difference between a split and
+    # a kill
+    del ckpt
+    gc.collect()
     model.to(device)
     if use_half:
         model.half()
@@ -261,6 +287,7 @@ def main():
     if audio.shape[0] == 1:
         audio = np.repeat(audio, 2, axis=0)
     mix = torch.from_numpy(audio).to(device)
+    del audio
 
     last_emit = 0.0
 
@@ -277,18 +304,31 @@ def main():
     except Exception as e:
         if device == "mps":
             emit(type="progress", stage="separate", pct=0, message=f"gpu failed ({e}), falling back to cpu")
+            # drop the gpu copies first: reloading the engine on top of a
+            # full cache is how the fallback dies of out-of-memory after a
+            # gpu error that was already recoverable
+            model = None
+            gc.collect()
+            mix = mix.to("cpu")
+            release_device_memory("mps")
             device = "cpu"
             use_half = False
             try:
                 model = load_model(ckpt_path, device, use_half)
             except Exception as e2:
                 fail(f"vocals engine load failed on cpu: {e2}")
-            mix = mix.to("cpu").float()
             est = separate(model, mix, device, use_half, on_progress)
         else:
             fail(f"separation failed: {e}")
 
     vocals = est.cpu().numpy()
+    # nothing left to compute: hand the engine and the device copies back
+    # before spending ram on the wav
+    model = None
+    mix = None
+    est = None
+    gc.collect()
+    release_device_memory(device)
     if np.isnan(vocals).any():
         fail("separation produced invalid audio")
     os.makedirs(args.out, exist_ok=True)

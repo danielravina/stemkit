@@ -13,19 +13,41 @@ type BufferCacheMap = BufferMap
 
 const bufferCache = new Map<string, Promise<BufferCacheMap>>()
 
+// one decoded song is a few hundred MB of Float32 PCM sitting in the renderer,
+// so this is a small LRU rather than an accumulating one: it keeps a jump back
+// to the previous song free without holding a copy of everything ever opened
+const CACHE_LIMIT = 2
+
 function getDecoded(videoId: string): Promise<BufferCacheMap> {
-  let entry = bufferCache.get(videoId)
-  if (!entry) {
-    entry = window.stemkit
-      .getBuffers(videoId)
-      .then((payload) => decodePayload(payload))
-      .catch((err) => {
-        bufferCache.delete(videoId)
-        throw err
-      })
-    bufferCache.set(videoId, entry)
+  const cached = bufferCache.get(videoId)
+  if (cached) {
+    // re-insert so the entry is last again (Map iterates in insertion order)
+    bufferCache.delete(videoId)
+    bufferCache.set(videoId, cached)
+    return cached
+  }
+  const entry = window.stemkit
+    .getBuffers(videoId)
+    .then((payload) => decodePayload(payload))
+    .catch((err) => {
+      bufferCache.delete(videoId)
+      throw err
+    })
+  bufferCache.set(videoId, entry)
+  while (bufferCache.size > CACHE_LIMIT) {
+    const oldest = bufferCache.keys().next()
+    if (oldest.done) break
+    bufferCache.delete(oldest.value)
   }
   return entry
+}
+
+/* A split peaks at several GB in the engine process, so whatever is left over
+   from browsing has to go when one starts — otherwise the song you last played
+   is what gets the next separation killed. */
+export function releaseBufferCache(): void {
+  bufferCache.clear()
+  engine.release()
 }
 
 interface Props {

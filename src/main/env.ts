@@ -13,7 +13,10 @@ export interface ToolInfo {
 
 export interface EnvState {
   python: ToolInfo
-  ffmpeg: ToolInfo
+  // ffmpeg builds without libsoxr (some homebrew/conda installs) reject
+  // aresample's resampler=soxr with a bare EINVAL, so the pipeline needs to
+  // know whether it may ask for it
+  ffmpeg: ToolInfo & { soxr?: boolean }
   jsRuntime?: { kind: 'deno' | 'node'; path: string }
   ready: boolean
   bootstrapping: boolean
@@ -553,8 +556,12 @@ export async function detectTools(): Promise<void> {
   for (const candidate of ffProbes) {
     if (!existsSync(candidate)) continue
     try {
-      await runCapture(candidate, ['-version'])
-      state.ffmpeg = { found: true, path: candidate }
+      const version = await runCapture(candidate, ['-version'])
+      // --enable-libsoxr shows up in the configuration line; conda and some
+      // homebrew builds omit it, and aresample then fails with "Invalid
+      // argument" after the output file is already open
+      const soxr = /libsoxr/.test(version)
+      state.ffmpeg = { found: true, path: candidate, soxr }
       break
     } catch {
       continue

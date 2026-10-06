@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   MODEL_DEFAULT,
   MODEL_EXTENDED,
@@ -20,6 +20,9 @@ interface Props {
   settings?: AppSettings
   onStart: (url: string, model: string, stems?: string[]) => void
   onStartLocal: (filePath: string, model: string, stems?: string[]) => void
+  // mirrors the engine + instrument toggles out to App, which owns the
+  // window-wide drop target and has no selection state of its own
+  onOptions: (model: string, stems: string[]) => void
   onSelect: (videoId: string) => void
   onOpenSettings: () => void
 }
@@ -33,6 +36,7 @@ export function Home({
   settings,
   onStart,
   onStartLocal,
+  onOptions,
   onSelect,
   onOpenSettings
 }: Props): React.ReactElement {
@@ -47,7 +51,13 @@ export function Home({
 
   const usesExtended = [...selected].some((id) => id === 'guitar' || id === 'piano')
   const derivedModel = usesExtended ? MODEL_EXTENDED : MODEL_DEFAULT
-  const orderedSelection = ALL_STEMS.filter((id) => selected.has(id))
+  const orderedSelection = useMemo(
+    () => ALL_STEMS.filter((id) => selected.has(id)),
+    [selected]
+  )
+  useEffect(() => {
+    onOptions(derivedModel, orderedSelection)
+  }, [derivedModel, orderedSelection, onOptions])
   // the fine-tuned engine only covers the standard 4-stem split; guitar and
   // piano always run through the 6-source engine, so they're unavailable
   // while it's on
@@ -161,7 +171,7 @@ export function Home({
           Turn any track into stems.
         </h1>
         <p className="text-center text-white/45 mt-2.5 text-[14px]">
-          Search YouTube, paste a link, or split an audio file from your computer — separated locally.
+          Search YouTube, paste a link, or drag audio files in from your computer — separated locally.
         </p>
 
         <div className="mt-6 flex gap-2">

@@ -1,4 +1,5 @@
 import argparse
+import gc
 import json
 import struct
 import sys
@@ -54,16 +55,19 @@ def load_wav(path):
 def save_wav_f32(path, data, sr):
     """write a 32-bit float wav (fmt tag 3); values above 1.0 are preserved"""
     channels, _ = data.shape
-    payload = data.T.astype("<f4").tobytes()
+    # one transposed contiguous copy written straight from memory: building a
+    # bytes payload first would hold a second full copy of the stem in ram
+    block = np.ascontiguousarray(data.T, dtype="<f4")
+    size = block.nbytes
     block_align = channels * 4
-    header = b"RIFF" + struct.pack("<I", 36 + len(payload)) + b"WAVE"
+    header = b"RIFF" + struct.pack("<I", 36 + size) + b"WAVE"
     header += b"fmt " + struct.pack(
         "<IHHIIHH", 16, 3, channels, sr, sr * block_align, block_align, 32
     )
-    header += b"data" + struct.pack("<I", len(payload))
+    header += b"data" + struct.pack("<I", size)
     with open(path, "wb") as f:
         f.write(header)
-        f.write(payload)
+        block.tofile(f)
 
 
 def main():
@@ -79,6 +83,20 @@ def main():
 
     import torch
     import types
+
+    def release_device_memory(device):
+        """torch's caching allocators keep blocks that refcounts already
+        dropped, so a cpu fallback that rebuilds the model gets charged for the
+        same ram twice — which is how one device failure turns into an
+        out-of-memory on the retry"""
+        try:
+            if device == "cuda" and torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            elif device == "mps" and getattr(torch.backends, "mps", None):
+                if torch.backends.mps.is_available():
+                    torch.mps.empty_cache()
+        except Exception:
+            pass
 
     # torch>=2.6 defaults torch.load(weights_only=True), which rejects demucs's
     # pickled full-model checkpoints (htdemucs.th / htdemucs_ft.th); restore
@@ -175,6 +193,7 @@ def main():
         audio = np.repeat(audio, 2, axis=0)
 
     mix = torch.from_numpy(audio).to(device)[None]
+    del audio
 
     emit(type="progress", stage="separate", pct=0, message="separating")
     try:
@@ -195,9 +214,14 @@ def main():
                 pct=0,
                 message=f"mps failed ({e}), falling back to cpu",
             )
+            # both rebinds drop the device copies; without the collector and
+            # the empty_cache the retry is still charged for them, so a
+            # recoverable mps error comes back as an out-of-memory
             model = model.cpu()
             mix = mix.cpu()
             device = "cpu"
+            gc.collect()
+            release_device_memory("mps")
             sources = apply_model(
                 model,
                 mix,
@@ -209,6 +233,8 @@ def main():
             )
         else:
             fail(f"separation failed: {e}")
+
+    del mix
 
     import os
 
@@ -222,10 +248,18 @@ def main():
             fail("no valid stems requested")
         emit(type="progress", stage="separate", pct=0, message=f"writing {len(wanted)} stems")
 
+    names = list(model.sources)
     os.makedirs(args.out, exist_ok=True)
+    # the host copy below is song-length per stem, so the weights and the
+    # device-side sources go first: keeping them through the write phase
+    # doubles the peak for nothing
+    del model
     out_cpu = sources[0].cpu().numpy()
+    del sources
+    gc.collect()
+    release_device_memory(device)
     written = []
-    for i, name in enumerate(model.sources):
+    for i, name in enumerate(names):
         if wanted is not None and name not in wanted:
             continue
         path = os.path.join(args.out, f"{name}.wav")

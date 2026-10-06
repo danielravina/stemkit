@@ -34,6 +34,10 @@ export interface AppSettings {
   // hide the YouTube video while playing: stems are always played locally,
   // this stops streaming the video and falls back to cached thumbnails
   hideVideo: boolean
+  // absolute path: every finished split is copied out of the app's own storage
+  // into a <exportFolder>/<song>/ folder as soon as it lands in the library.
+  // Empty means "stay in the library only"
+  exportFolder: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -41,7 +45,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   htdemucsFt: false,
   roformerVocals: false,
   gpuSplit: false,
-  hideVideo: false
+  hideVideo: false,
+  exportFolder: ''
 }
 
 export interface EngineStatus {
@@ -116,12 +121,16 @@ export interface StemKitApi {
   envUpdateYtDlp(): Promise<boolean>
   listSongs(): Promise<Song[]>
   deleteSong(videoId: string): Promise<void>
+  clearLibrary(): Promise<void>
   getBuffers(videoId: string): Promise<Record<string, Uint8Array>>
   exportStem(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>
   exportAllStems(videoId: string): Promise<{ saved: boolean; path?: string; count?: number }>
   searchYouTube(query: string): Promise<SearchResult[]>
   startJob(url: string, model?: string, stems?: string[]): Promise<{ started: boolean }>
   pickAudioFile(): Promise<string | null>
+  pickFolder(): Promise<string | null>
+  // absolute path of a File dropped into the window (preload-side webUtils)
+  getPathForFile(file: File): string
   startLocalJob(filePath: string, model?: string, stems?: string[]): Promise<{ started: boolean }>
   cancelJob(videoId?: string): Promise<void>
   openExternal(url: string): Promise<void>
