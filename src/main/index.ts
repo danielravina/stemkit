@@ -1,4 +1,12 @@
-import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  ipcMain,
+  shell,
+  dialog,
+  Menu,
+  type MenuItemConstructorOptions
+} from 'electron'
 import { join, normalize, extname } from 'path'
 import { existsSync, copyFileSync, createReadStream, statSync } from 'fs'
 import { createServer, type Server } from 'http'
@@ -21,7 +29,7 @@ import {
   getStatus
 } from './env'
 import { loadSettings, saveSettings } from './settings'
-import { loadSongs, removeSong, clearLibrary, stemBuffers, stemsDir, stemsFor, sanitizeName, exportStems } from './library'
+import { loadSongs, removeSong, clearLibrary, stemBuffers, stemsDir, stemsFor, sanitizeName, exportStems, transcodeToAac } from './library'
 import { AUDIO_EXTENSIONS } from '../shared/local'
 import { startJob, startLocalJob, cancelJob, searchYouTube } from './pipeline'
 import { initUpdater } from './updater'
@@ -76,6 +84,65 @@ function startRendererServer(): Promise<string> {
   })
 }
 
+function showAboutWindow(): void {
+  if (!mainWindow) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  mainWindow.webContents.send('app:show-about')
+}
+
+function installApplicationMenu(): void {
+  const aboutItem: MenuItemConstructorOptions = {
+    label: 'About StemKit',
+    click: showAboutWindow
+  }
+  const template: MenuItemConstructorOptions[] =
+    process.platform === 'darwin'
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              aboutItem,
+              { type: 'separator' },
+              { role: 'services', submenu: [] },
+              { type: 'separator' },
+              { role: 'hide' },
+              { role: 'hideOthers' },
+              { role: 'unhide' },
+              { type: 'separator' },
+              { role: 'quit' }
+            ]
+          },
+          {
+            label: 'Edit',
+            submenu: [
+              { role: 'undo' },
+              { role: 'redo' },
+              { type: 'separator' },
+              { role: 'cut' },
+              { role: 'copy' },
+              { role: 'paste' },
+              { role: 'selectAll' }
+            ]
+          },
+          { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'front' }] }
+        ]
+      : [
+          { label: 'File', submenu: [{ role: 'quit' }] },
+          { label: 'Help', submenu: [aboutItem] }
+        ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+function requireExportFfmpeg(): string {
+  const ffmpeg = getStatus().ffmpeg.path
+  if (!ffmpeg) {
+    throw new Error('Something went wrong with the built-in audio tools. Try reinstalling StemKit.')
+  }
+  return ffmpeg
+}
+
 async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1360,
@@ -122,6 +189,8 @@ app.whenReady().then(async () => {
     app.exit(ok ? 0 : 1)
     return
   }
+
+  installApplicationMenu()
 
   // existing install (e.g. right after an update): pre-fetch the engine
   // checkpoints the user opted into, in the background, so the first split
@@ -205,13 +274,22 @@ app.whenReady().then(async () => {
     const song = loadSongs().find((s) => s.videoId === videoId)
     const file = join(stemsDir(videoId), `${stem}.wav`)
     if (!existsSync(file)) throw new Error(`Missing stem ${stem}`)
+    const format = loadSettings().exportFormat
+    const ext = format === 'aac' ? 'm4a' : 'wav'
     const result = await dialog.showSaveDialog({
       title: `Export ${stem}`,
-      defaultPath: join(app.getPath('downloads'), `${sanitizeName(song?.title ?? videoId)} - ${stem}.wav`),
-      filters: [{ name: 'WAV audio', extensions: ['wav'] }]
+      defaultPath: join(
+        app.getPath('downloads'),
+        `${sanitizeName(song?.title ?? videoId)} - ${stem}.${ext}`
+      ),
+      filters: [{ name: format === 'aac' ? 'AAC audio' : 'WAV audio', extensions: [ext] }]
     })
     if (result.canceled || !result.filePath) return { saved: false }
-    copyFileSync(file, result.filePath)
+    if (format === 'aac') {
+      await transcodeToAac(requireExportFfmpeg(), file, result.filePath)
+    } else {
+      copyFileSync(file, result.filePath)
+    }
     return { saved: true, path: result.filePath }
   })
 
@@ -228,7 +306,16 @@ app.whenReady().then(async () => {
       properties: ['openDirectory', 'createDirectory']
     })
     if (result.canceled || !result.filePaths[0]) return { saved: false }
-    const { path, count } = await exportStems(videoId, song?.title ?? videoId, list, result.filePaths[0])
+    const format = loadSettings().exportFormat
+    const ffmpeg = format === 'aac' ? requireExportFfmpeg() : null
+    const { path, count } = await exportStems(
+      videoId,
+      song?.title ?? videoId,
+      list,
+      result.filePaths[0],
+      format,
+      ffmpeg
+    )
     return { saved: true, path, count }
   })
 
@@ -257,9 +344,18 @@ app.whenReady().then(async () => {
   initUpdater()
   // anonymous usage heartbeat: one POST per install per day
   maybePing()
-  ipcMain.handle('open-external', (_e, url: string) => {
-    if (/^https:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(url)) {
-      shell.openExternal(url)
+  ipcMain.handle('open-external', (_e, value: string) => {
+    try {
+      const url = new URL(value)
+      const youtube = ['youtube.com', 'www.youtube.com', 'youtu.be'].includes(url.hostname)
+      const website = url.hostname === 'stemkit.pages.dev'
+      const projectGithub =
+        url.hostname === 'github.com' && /^\/danvelope\/stemkit(?:\/|$)/.test(url.pathname)
+      if (url.protocol === 'https:' && (youtube || website || projectGithub)) {
+        shell.openExternal(url.toString())
+      }
+    } catch {
+      // Ignore malformed or unsupported external URLs.
     }
   })
 

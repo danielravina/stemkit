@@ -25,6 +25,7 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
     roformerVocals: !!merged.roformerVocals,
     gpuSplit: !!merged.gpuSplit,
     hideVideo: !!merged.hideVideo,
+    exportFormat: merged.exportFormat === 'aac' ? 'aac' : 'wav',
     exportFolder: typeof merged.exportFolder === 'string' ? merged.exportFolder.trim() : ''
   }
   writeFileSync(settingsFile(), JSON.stringify(next, null, 2))

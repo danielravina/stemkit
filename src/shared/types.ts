@@ -34,6 +34,10 @@ export interface AppSettings {
   // hide the YouTube video while playing: stems are always played locally,
   // this stops streaming the video and falls back to cached thumbnails
   hideVideo: boolean
+  // format used when exporting stems: wav is the lossless source format,
+  // aac (.m4a) is transcoded on export via the bundled ffmpeg. mp3 isn't an
+  // option — the bundled ffmpeg is a minimal static build without libmp3lame
+  exportFormat: 'wav' | 'aac'
   // absolute path: every finished split is copied out of the app's own storage
   // into a <exportFolder>/<song>/ folder as soon as it lands in the library.
   // Empty means "stay in the library only"
@@ -46,6 +50,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   roformerVocals: false,
   gpuSplit: false,
   hideVideo: false,
+  exportFormat: 'wav',
   exportFolder: ''
 }
 
@@ -135,6 +140,7 @@ export interface StemKitApi {
   cancelJob(videoId?: string): Promise<void>
   openExternal(url: string): Promise<void>
   getAppVersion(): Promise<string>
+  checkForUpdates(): Promise<{ ok: boolean }>
   installUpdate(): void
   getSettings(): Promise<AppSettings>
   setSettings(patch: Partial<AppSettings>): Promise<AppSettings>
@@ -143,6 +149,7 @@ export interface StemKitApi {
   enginesStatus(): Promise<EngineStatus>
   fetchEngine(which: 'vocals' | 'ft' | 'gpu'): Promise<void>
   onUpdateEvent(cb: (ev: UpdateEvent) => void): () => void
+  onShowAbout(cb: () => void): () => void
   onJobEvent(cb: (ev: JobEvent) => void): () => void
   onEnvEvent(cb: (ev: EnvEvent) => void): () => void
   onSettingsChange(cb: (settings: AppSettings) => void): () => void

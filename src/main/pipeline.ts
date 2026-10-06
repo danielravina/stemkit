@@ -216,16 +216,24 @@ function finalizeJob(
   })
   send({ kind: 'done', data: { videoId: job.videoId, song: songs[0] } })
 
-  const folder = loadSettings().exportFolder
-  if (folder) {
+  const { exportFolder, exportFormat } = loadSettings()
+  if (exportFolder) {
+    const ffmpeg = exportFormat === 'aac' ? (getStatus().ffmpeg.path ?? null) : null
     // not awaited: a slow or full target volume must not hold up the library
     // entry the player is already waiting on
-    void exportStems(job.videoId, info.title, producedStems, folder).catch((err: unknown) =>
+    void exportStems(
+      job.videoId,
+      info.title,
+      producedStems,
+      exportFolder,
+      exportFormat,
+      ffmpeg
+    ).catch((err: unknown) =>
       send({
         kind: 'failed',
         data: {
           videoId: '',
-          message: `Export to ${folder} failed: ${err instanceof Error ? err.message : String(err)}`
+          message: `Export to ${exportFolder} failed: ${err instanceof Error ? err.message : String(err)}`
         }
       })
     )

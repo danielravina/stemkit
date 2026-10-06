@@ -9,6 +9,7 @@ import { Processing } from './components/Processing'
 import { Player, releaseBufferCache } from './components/Player'
 import { Setup } from './components/Setup'
 import { Settings } from './components/Settings'
+import { About } from './components/About'
 import { LogoMark } from './components/Icons'
 
 interface EnvLog {
@@ -53,6 +54,7 @@ export default function App(): React.ReactElement {
   const [appVersion, setAppVersion] = useState<string | undefined>(undefined)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [aboutOpen, setAboutOpen] = useState(false)
   const [dropping, setDropping] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   // what a dropped file should be split with: Home pushes its current engine
@@ -91,11 +93,13 @@ export default function App(): React.ReactElement {
       setEnvLogs((l) => [...l.slice(-300), { message: e.message, level: e.level }])
     )
     const offUpdate = window.stemkit.onUpdateEvent((e) => setUpdate(e))
+    const offAbout = window.stemkit.onShowAbout(() => setAboutOpen(true))
     void window.stemkit.getAppVersion().then(setAppVersion)
     return () => {
       offJob()
       offEnv()
       offUpdate()
+      offAbout()
       offSettings()
     }
   }, [])
@@ -344,21 +348,27 @@ export default function App(): React.ReactElement {
 
   if (!status) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <LogoMark className="w-12 h-12 animate-pulse" />
-      </div>
+      <>
+        <div className="h-full flex items-center justify-center">
+          <LogoMark className="w-12 h-12 animate-pulse" />
+        </div>
+        {aboutOpen && <About version={appVersion} onClose={() => setAboutOpen(false)} />}
+      </>
     )
   }
 
   if (!status.ready) {
     return (
-      <Setup
-        status={status}
-        logs={envLogs}
-        onInstall={() => {
-          void window.stemkit.envBootstrap().then(() => window.stemkit.envStatus().then(setStatus))
-        }}
-      />
+      <>
+        <Setup
+          status={status}
+          logs={envLogs}
+          onInstall={() => {
+            void window.stemkit.envBootstrap().then(() => window.stemkit.envStatus().then(setStatus))
+          }}
+        />
+        {aboutOpen && <About version={appVersion} onClose={() => setAboutOpen(false)} />}
+      </>
     )
   }
 
@@ -447,6 +457,7 @@ export default function App(): React.ReactElement {
           </div>
         </div>
       )}
+      {aboutOpen && <About version={appVersion} onClose={() => setAboutOpen(false)} />}
     </div>
   )
 }

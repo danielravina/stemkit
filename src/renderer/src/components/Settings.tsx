@@ -346,6 +346,33 @@ export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props)
             <SectionHeader label="Export" />
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
+                <p className="text-[13px] font-medium">Export format</p>
+                <p className="text-[11.5px] text-white/40 leading-relaxed mt-0.5">
+                  AAC (.m4a) is transcoded on export with the built-in ffmpeg — much smaller
+                  files, small quality loss.
+                </p>
+              </div>
+              <div className="flex shrink-0 rounded-lg bg-white/[0.06] p-0.5 border border-white/[0.08]">
+                {([
+                  { v: 'wav' as const, label: 'WAV' },
+                  { v: 'aac' as const, label: 'AAC' }
+                ]).map((opt) => (
+                  <button
+                    key={opt.v}
+                    onClick={() => onChange({ exportFormat: opt.v })}
+                    className={`no-drag px-2.5 h-6 rounded-md text-[12px] font-semibold transition-colors ${
+                      settings.exportFormat === opt.v
+                        ? 'bg-white text-black'
+                        : 'text-white/45 hover:text-white/80'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
                 <p className="text-[13px] font-medium">Export folder</p>
                 <p className="text-[11.5px] text-white/40 leading-relaxed mt-0.5">
                   Copy the stems of every finished split straight into this folder, in a subfolder

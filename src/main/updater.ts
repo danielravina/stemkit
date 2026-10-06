@@ -8,6 +8,16 @@ function send(status: string, payload?: Record<string, unknown>): void {
 }
 
 export function initUpdater(): void {
+  ipcMain.handle('update:check', async () => {
+    if (!app.isPackaged) return { ok: false }
+    try {
+      await autoUpdater.checkForUpdates()
+      return { ok: true }
+    } catch {
+      return { ok: false }
+    }
+  })
+
   if (!app.isPackaged) return
 
   autoUpdater.autoDownload = true
@@ -34,15 +44,6 @@ export function initUpdater(): void {
   ipcMain.handle('update:install', () => {
     autoUpdater.quitAndInstall()
   })
-  ipcMain.handle('update:check', async () => {
-    try {
-      await autoUpdater.checkForUpdates()
-      return { ok: true }
-    } catch {
-      return { ok: false }
-    }
-  })
-
   // electron-updater only supports AppImage on linux — deb installs update
   // by re-downloading, so no automatic checks there (the handlers above
   // stay registered and simply report no update)

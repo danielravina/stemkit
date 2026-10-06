@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, openSync, readSync, closeSync } from 'fs'
 import { readFile, cp } from 'fs/promises'
+import { spawn } from 'child_process'
 import { join } from 'path'
 import { userDataDir } from './env'
 import { DEFAULT_STEMS, type Song } from '../shared/types'
@@ -73,20 +74,48 @@ export function sanitizeName(name: string): string {
   return clean.length > 0 ? clean.slice(0, 120) : 'stems'
 }
 
+// the bundled ffmpeg is a minimal static build without libmp3lame, so mp3 isn't
+// an option — aac is a native encoder that needs no extra library
+export function transcodeToAac(ffmpeg: string, input: string, output: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpeg, ['-y', '-i', input, '-c:a', 'aac', '-b:a', '256k', output])
+    child.on('error', reject)
+    child.on('close', (code) =>
+      code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code} writing ${output}`))
+    )
+  })
+}
+
+// aac needs the bundled ffmpeg passed in; a null ffmpeg copies the lossless wav
+async function writeTo(
+  src: string,
+  dest: string,
+  format: 'wav' | 'aac',
+  ffmpeg: string | null
+): Promise<void> {
+  if (format === 'wav' || !ffmpeg) await cp(src, dest)
+  else await transcodeToAac(ffmpeg, src, dest)
+}
+
 export async function exportStems(
   videoId: string,
   title: string,
   stems: string[],
-  root: string
+  root: string,
+  format: 'wav' | 'aac' = 'wav',
+  ffmpeg: string | null = null
 ): Promise<{ path: string; count: number }> {
   const dir = stemsDir(videoId)
+  const ext = format === 'aac' ? 'm4a' : 'wav'
   const target = join(root, sanitizeName(title || videoId))
   mkdirSync(target, { recursive: true })
   const names = stems.filter((name) => existsSync(join(dir, `${name}.wav`)))
-  await Promise.all(names.map((name) => cp(join(dir, `${name}.wav`), join(target, `${name}.wav`))))
+  await Promise.all(
+    names.map((name) => writeTo(join(dir, `${name}.wav`), join(target, `${name}.${ext}`), format, ffmpeg))
+  )
   const mix = mixWavPath(videoId)
   if (existsSync(mix)) {
-    await cp(mix, join(target, `${sanitizeName(title || 'full track')}.wav`))
+    await writeTo(mix, join(target, `${sanitizeName(title || 'full track')}.${ext}`), format, ffmpeg)
   }
   return { path: target, count: names.length + (existsSync(mix) ? 1 : 0) }
 }

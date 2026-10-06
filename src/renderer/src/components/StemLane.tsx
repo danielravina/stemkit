@@ -177,7 +177,7 @@ export function StemLane({
       {onExport && (
         <button
           onClick={onExport}
-          title="Export stem as WAV"
+          title="Export stem"
           className="no-drag w-6 h-6 rounded-md bg-white/5 hover:bg-white/10 text-white/40 hover:text-white flex items-center justify-center transition-colors shrink-0"
         >
           <DownloadIcon className="w-3.5 h-3.5" />
