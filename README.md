@@ -45,7 +45,7 @@ Optional quality upgrades live behind a gear icon in the app (Settings), each wi
 
 - **macOS 12+** (Apple Silicon or Intel x86_64) or **Windows 10/11** (x64) or **Linux x64** (Ubuntu 22.04+ or equivalent; NVIDIA driver for GPU splits, AMD via ROCm on Linux — experimental)
 - No manual installs: if no Python 3.9+ is detected, StemKit downloads a private runtime (python-build-standalone) during first-launch setup
-- Node.js 20+ only for building from source
+- Node.js 24+ only for building from source
 
 > **Intel Mac**: PyTorch publishes no macOS x86_64 wheels past 2.2.2, so first-launch setup installs that build instead of the 2.5.1 used everywhere else. MPS is still available on that build when the machine has a Metal-capable GPU (verified on an Intel Mac with a discrete GPU); integrated-only Macs fall back to CPU.
 
