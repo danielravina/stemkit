@@ -247,14 +247,20 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.code === 'Space' && !(e.target instanceof HTMLInputElement)) {
+      if (e.target instanceof HTMLInputElement) return
+      if (e.code === 'Space') {
         e.preventDefault()
         togglePlay()
+      } else if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+        if (decoding || decodeError) return
+        e.preventDefault()
+        const step = e.shiftKey ? 15 : 5
+        seekTo(posRef.current + (e.code === 'ArrowLeft' ? -step : step))
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePlay])
+  }, [togglePlay, seekTo, decoding, decodeError])
 
   const applyPreset = (p: PresetId): void => {
     setPreset(p)
