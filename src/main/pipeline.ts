@@ -692,7 +692,7 @@ function runProcess(
          never ends */
       if (
         (code === null && signal === 'SIGKILL' && !detail) ||
-        /out of memory|cannot allocate|std::bad_alloc|insufficient memory/i.test(detail)
+        /(?:cuda|mps backend) out of memory|can(?:no|')t allocate memory|std::bad_alloc/i.test(detail)
       ) {
         reject(
           new Error(

@@ -317,7 +317,10 @@ def main():
                 model = load_model(ckpt_path, device, use_half)
             except Exception as e2:
                 fail(f"vocals engine load failed on cpu: {e2}")
-            est = separate(model, mix, device, use_half, on_progress)
+            try:
+                est = separate(model, mix, device, use_half, on_progress)
+            except Exception as e2:
+                fail(f"vocals separation failed on cpu: {e2}")
         else:
             fail(f"separation failed: {e}")
 

@@ -203,6 +203,12 @@ export default function App(): React.ReactElement {
         return
       }
       const { model, stems } = startOpts.current
+      /* checked before either branch: an empty pick means "default 4-stem
+         split" downstream, so a link would start a split nobody asked for */
+      if (stems.length === 0) {
+        setNotice('Pick at least one instrument first')
+        return
+      }
       const files = Array.from(dt.files)
       if (files.length === 0) {
         const link = (dt.getData('text/uri-list') || '').split(/[\r\n]/)[0]
@@ -228,10 +234,6 @@ export default function App(): React.ReactElement {
             ? `Can’t split ${skipped.join(', ')} — use mp3, wav, flac, m4a, ogg or opus`
             : 'Drop audio files (mp3, wav, flac, m4a…)'
         )
-        return
-      }
-      if (stems.length === 0) {
-        setNotice('Pick at least one instrument first')
         return
       }
       if (skipped.length > 0) setNotice(`Skipped ${skipped.join(', ')} — not audio`)

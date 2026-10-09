@@ -71,6 +71,8 @@ export function clearLibrary(): void {
 
 export function sanitizeName(name: string): string {
   const clean = name.replace(/[\\/:*?"<>|]/g, '-').trim()
+  // joined under the export root: '..' would land in its parent
+  if (clean === '.' || clean === '..') return 'stems'
   return clean.length > 0 ? clean.slice(0, 120) : 'stems'
 }
 
