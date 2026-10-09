@@ -217,6 +217,12 @@ export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props)
     void window.stemkit.fetchEngine('gpu')
   }
 
+  const pickFolder = (): void => {
+    void window.stemkit.pickFolder().then((path) => {
+      if (path) onChange({ exportFolder: path })
+    })
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
@@ -337,23 +343,6 @@ export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props)
           </section>
 
           <section className="pt-5 border-t border-white/[0.06] space-y-5">
-            <SectionHeader label="Playback" />
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-[13px] font-medium">Hide YouTube video</p>
-                <p className="text-[11.5px] text-white/40 leading-relaxed mt-0.5">
-                  Stems always play locally from your library. This stops streaming the video
-                  while you play and uses cached thumbnails instead.
-                </p>
-              </div>
-              <Toggle
-                on={settings.hideVideo}
-                onClick={() => onChange({ hideVideo: !settings.hideVideo })}
-              />
-            </div>
-          </section>
-
-          <section className="pt-5 border-t border-white/[0.06] space-y-5">
             <SectionHeader label="Export" />
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
@@ -381,6 +370,53 @@ export function Settings({ settings, gpu, gpuVendor, onChange, onClose }: Props)
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium">Export folder</p>
+                <p className="text-[11.5px] text-white/40 leading-relaxed mt-0.5">
+                  Copy the stems of every finished split straight into this folder, in a subfolder
+                  per song. They stay in the library either way.
+                </p>
+                {settings.exportFolder && (
+                  <p className="mt-1.5 text-[11px] font-mono text-white/45 break-all leading-relaxed">
+                    {settings.exportFolder}
+                  </p>
+                )}
+              </div>
+              <div className="shrink-0 flex flex-col items-end gap-1.5">
+                <button
+                  onClick={pickFolder}
+                  className="no-drag px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/[0.08] text-[12px] text-white/75 hover:text-white transition-colors"
+                >
+                  {settings.exportFolder ? 'Change' : 'Choose…'}
+                </button>
+                {settings.exportFolder && (
+                  <button
+                    onClick={() => onChange({ exportFolder: '' })}
+                    className="no-drag text-[11px] text-white/35 hover:text-white/70 transition-colors"
+                  >
+                    Stop exporting
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="pt-5 border-t border-white/[0.06] space-y-5">
+            <SectionHeader label="Playback" />
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium">Hide YouTube video</p>
+                <p className="text-[11.5px] text-white/40 leading-relaxed mt-0.5">
+                  Stems always play locally from your library. This stops streaming the video
+                  while you play and uses cached thumbnails instead.
+                </p>
+              </div>
+              <Toggle
+                on={settings.hideVideo}
+                onClick={() => onChange({ hideVideo: !settings.hideVideo })}
+              />
             </div>
           </section>
         </div>

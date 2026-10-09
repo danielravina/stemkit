@@ -38,6 +38,10 @@ export interface AppSettings {
   // aac (.m4a) is transcoded on export via the bundled ffmpeg. mp3 isn't an
   // option — the bundled ffmpeg is a minimal static build without libmp3lame
   exportFormat: 'wav' | 'aac'
+  // absolute path: every finished split is copied out of the app's own storage
+  // into a <exportFolder>/<song>/ folder as soon as it lands in the library.
+  // Empty means "stay in the library only"
+  exportFolder: string
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -46,7 +50,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   roformerVocals: false,
   gpuSplit: false,
   hideVideo: false,
-  exportFormat: 'wav'
+  exportFormat: 'wav',
+  exportFolder: ''
 }
 
 export interface EngineStatus {
@@ -121,12 +126,16 @@ export interface StemKitApi {
   envUpdateYtDlp(): Promise<boolean>
   listSongs(): Promise<Song[]>
   deleteSong(videoId: string): Promise<void>
+  clearLibrary(): Promise<void>
   getBuffers(videoId: string): Promise<Record<string, Uint8Array>>
   exportStem(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>
   exportAllStems(videoId: string): Promise<{ saved: boolean; path?: string; count?: number }>
   searchYouTube(query: string): Promise<SearchResult[]>
   startJob(url: string, model?: string, stems?: string[]): Promise<{ started: boolean }>
   pickAudioFile(): Promise<string | null>
+  pickFolder(): Promise<string | null>
+  // absolute path of a File dropped into the window (preload-side webUtils)
+  getPathForFile(file: File): string
   startLocalJob(filePath: string, model?: string, stems?: string[]): Promise<{ started: boolean }>
   cancelJob(videoId?: string): Promise<void>
   openExternal(url: string): Promise<void>

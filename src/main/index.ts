@@ -8,8 +8,7 @@ import {
   type MenuItemConstructorOptions
 } from 'electron'
 import { join, normalize, extname } from 'path'
-import { existsSync, copyFileSync, mkdirSync, createReadStream, statSync } from 'fs'
-import { spawn } from 'child_process'
+import { existsSync, copyFileSync, createReadStream, statSync } from 'fs'
 import { createServer, type Server } from 'http'
 import type { AddressInfo } from 'net'
 import type { AppSettings } from '../shared/types'
@@ -30,7 +29,8 @@ import {
   getStatus
 } from './env'
 import { loadSettings, saveSettings } from './settings'
-import { loadSongs, removeSong, stemBuffers, stemsDir, stemsFor, mixWavPath, AUDIO_EXTENSIONS } from './library'
+import { loadSongs, removeSong, clearLibrary, stemBuffers, stemsDir, stemsFor, sanitizeName, exportStems, transcodeToAac } from './library'
+import { AUDIO_EXTENSIONS } from '../shared/local'
 import { startJob, startLocalJob, cancelJob, searchYouTube } from './pipeline'
 import { initUpdater } from './updater'
 import { runSmoke } from './smoke'
@@ -82,11 +82,6 @@ function startRendererServer(): Promise<string> {
       resolve(`http://localhost:${(server.address() as AddressInfo).port}`)
     })
   })
-}
-
-function sanitizeName(name: string): string {
-  const clean = name.replace(/[\\/:*?"<>|]/g, '-').trim()
-  return clean.length > 0 ? clean.slice(0, 120) : 'stems'
 }
 
 function showAboutWindow(): void {
@@ -146,16 +141,6 @@ function requireExportFfmpeg(): string {
     throw new Error('Something went wrong with the built-in audio tools. Try reinstalling StemKit.')
   }
   return ffmpeg
-}
-
-// the bundled ffmpeg is a minimal static build without libmp3lame, so mp3
-// isn't an option — aac is a native encoder, no extra library needed
-function transcodeToAac(ffmpeg: string, input: string, output: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(ffmpeg, ['-y', '-i', input, '-c:a', 'aac', '-b:a', '256k', output])
-    child.on('error', reject)
-    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`))))
-  })
 }
 
 async function createWindow(): Promise<void> {
@@ -245,6 +230,12 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('library:list', () => loadSongs())
   ipcMain.handle('library:delete', (_e, videoId: string) => removeSong(videoId))
+  ipcMain.handle('library:clear', () => {
+    // cancel first: a running job would keep writing into the folder we are
+    // about to delete and land a half-split song back in the library
+    cancelJob()
+    clearLibrary()
+  })
   ipcMain.handle('song:buffers', (_e, videoId: string) => {
     const song = loadSongs().find((s) => s.videoId === videoId)
     return stemBuffers(videoId, song?.stems)
@@ -264,6 +255,15 @@ app.whenReady().then(async () => {
       buttonLabel: 'Split',
       properties: ['openFile'],
       filters: [{ name: 'Audio files', extensions: AUDIO_EXTENSIONS }]
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    return result.filePaths[0]
+  })
+  ipcMain.handle('files:pick-folder', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Choose the export folder',
+      buttonLabel: 'Export here',
+      properties: ['openDirectory', 'createDirectory']
     })
     if (result.canceled || !result.filePaths[0]) return null
     return result.filePaths[0]
@@ -306,26 +306,17 @@ app.whenReady().then(async () => {
       properties: ['openDirectory', 'createDirectory']
     })
     if (result.canceled || !result.filePaths[0]) return { saved: false }
-    const target = join(result.filePaths[0], sanitizeName(song?.title ?? videoId))
-    mkdirSync(target, { recursive: true })
     const format = loadSettings().exportFormat
-    const ext = format === 'aac' ? 'm4a' : 'wav'
     const ffmpeg = format === 'aac' ? requireExportFfmpeg() : null
-    for (const name of list) {
-      const src = join(dir, `${name}.wav`)
-      const dest = join(target, `${name}.${ext}`)
-      if (ffmpeg) await transcodeToAac(ffmpeg, src, dest)
-      else copyFileSync(src, dest)
-    }
-    let count = list.length
-    const mix = mixWavPath(videoId)
-    if (existsSync(mix)) {
-      const mixDest = join(target, `${sanitizeName(song?.title ?? 'full track')}.${ext}`)
-      if (ffmpeg) await transcodeToAac(ffmpeg, mix, mixDest)
-      else copyFileSync(mix, mixDest)
-      count += 1
-    }
-    return { saved: true, path: target, count }
+    const { path, count } = await exportStems(
+      videoId,
+      song?.title ?? videoId,
+      list,
+      result.filePaths[0],
+      format,
+      ffmpeg
+    )
+    return { saved: true, path, count }
   })
 
   ipcMain.handle('search:youtube', (_e, query: string) => searchYouTube(query))

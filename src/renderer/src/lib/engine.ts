@@ -8,16 +8,24 @@ export async function decodePayload(
   const ctx = new AudioContext()
   void ctx.resume()
   const ids = Object.keys(payload)
-  // decodeAudioData detaches the source buffer — the IPC payload is throwaway,
-  // so hand it over as-is (skips a full copy per stem)
-  const decoded = await Promise.all(
-    ids.map((id) => ctx.decodeAudioData(payload[id].buffer as ArrayBuffer))
-  )
-  const out: BufferMap = {}
-  ids.forEach((id, i) => {
-    out[id as StemId] = decoded[i]
-  })
-  return out
+  try {
+    // decodeAudioData detaches the source buffer — the IPC payload is throwaway,
+    // so hand it over as-is (skips a full copy per stem)
+    const decoded = await Promise.all(
+      ids.map((id) => ctx.decodeAudioData(payload[id].buffer as ArrayBuffer))
+    )
+    const out: BufferMap = {}
+    ids.forEach((id, i) => {
+      out[id as StemId] = decoded[i]
+    })
+    return out
+  } finally {
+    // this context exists only to decode, and every open one holds an audio
+    // stream + engine of its own: leaving it running leaks one per song
+    // visited. AudioBuffers outlive the context that made them, so the
+    // playback engine (a separate context) still uses them
+    void ctx.close()
+  }
 }
 
 export class StemEngine {
@@ -127,6 +135,13 @@ export class StemEngine {
   stopAll(): void {
     this.playing = false
     this.stopSources()
+  }
+
+  // hand back the decoded audio: the singleton engine would otherwise pin the
+  // last viewed song for the rest of the session
+  release(): void {
+    this.stopAll()
+    this.buffers = {}
   }
 
   private stopSources(): void {

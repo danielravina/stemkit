@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { createInterface } from 'readline'
 import { readdirSync, mkdirSync, rmSync, statSync } from 'fs'
-import { basename, extname, join } from 'path'
+import { basename, join } from 'path'
+import { totalmem } from 'os'
 import { BrowserWindow } from 'electron'
 import {
   venvPython,
@@ -24,16 +25,16 @@ import {
   stemsPresent,
   stemsFor,
   mixWavPath,
+  exportStems,
   rawDownloadPath,
   upsertSong,
   loadSongs,
-  AUDIO_EXTENSIONS,
   wavDuration
 } from './library'
 import type { JobEvent, JobStage } from '../shared/types'
 import { MODEL_DEFAULT, MODEL_EXTENDED } from '../shared/types'
 import { parseVideoId } from '../shared/url'
-import { localSongId } from '../shared/local'
+import { AUDIO_EXTENSIONS, audioExtension, localSongId } from '../shared/local'
 import { cacheThumbnail } from './thumbs'
 
 interface ActiveJob {
@@ -46,7 +47,12 @@ interface ActiveJob {
 
 const jobs = new Map<string, ActiveJob>()
 
-const MAX_CONCURRENT_SEPARATIONS = 2
+/* One engine process peaks at a few GB (weights + the whole song on the
+   device), so two at once needs real headroom: below 16GB of RAM a second
+   concurrent split is what gets the pair killed, which looks like a random
+   failure on the second song. Machines with less run one at a time and the
+   rest queue. */
+const MAX_CONCURRENT_SEPARATIONS = totalmem() >= 16 * 1024 ** 3 ? 2 : 1
 let activeSeparations = 0
 const separationWaiters: Array<() => void> = []
 
@@ -164,19 +170,21 @@ function reuseOrPrepare(
 async function convertToWav(job: ActiveJob, inputPath: string): Promise<void> {
   const videoId = job.videoId
   progress(job, 'convert', 0, 'Converting to WAV')
-  const ffmpeg = getStatus().ffmpeg.path
-  if (!ffmpeg) {
+  const ffmpeg = getStatus().ffmpeg
+  if (!ffmpeg.path) {
     throw Object.assign(
       new Error('Something went wrong with the built-in audio tools. Try reinstalling StemKit.'),
       { videoId }
     )
   }
-  await runProcess(job, ffmpeg as string, [
+  await runProcess(job, ffmpeg.path as string, [
     '-y',
     '-i',
     inputPath,
     '-af',
-    'aresample=44100:resampler=soxr',
+    // swr sounds marginally worse on odd sample rates, but a build without
+    // libsoxr hard-fails the whole job on the soxr resampler
+    ffmpeg.soxr === false ? 'aresample=44100' : 'aresample=44100:resampler=soxr',
     '-ar',
     '44100',
     '-ac',
@@ -207,6 +215,29 @@ function finalizeJob(
     source: info.source
   })
   send({ kind: 'done', data: { videoId: job.videoId, song: songs[0] } })
+
+  const { exportFolder, exportFormat } = loadSettings()
+  if (exportFolder) {
+    const ffmpeg = exportFormat === 'aac' ? (getStatus().ffmpeg.path ?? null) : null
+    // not awaited: a slow or full target volume must not hold up the library
+    // entry the player is already waiting on
+    void exportStems(
+      job.videoId,
+      info.title,
+      producedStems,
+      exportFolder,
+      exportFormat,
+      ffmpeg
+    ).catch((err: unknown) =>
+      send({
+        kind: 'failed',
+        data: {
+          videoId: '',
+          message: `Export to ${exportFolder} failed: ${err instanceof Error ? err.message : String(err)}`
+        }
+      })
+    )
+  }
 }
 
 export async function startJob(
@@ -320,7 +351,7 @@ export async function startLocalJob(
   stems?: string[]
 ): Promise<void> {
   const filePath = String(rawPath ?? '').trim()
-  const ext = extname(filePath).slice(1).toLowerCase()
+  const ext = audioExtension(filePath)
   if (!filePath || !AUDIO_EXTENSIONS.includes(ext)) {
     send({
       kind: 'failed',
@@ -634,23 +665,48 @@ function runProcess(
       stderrTail = (stderrTail + chunk.toString()).slice(-2000)
     })
 
+    let rl: ReturnType<typeof createInterface> | null = null
     if (opts.onLine && child.stdout) {
-      const rl = createInterface({ input: child.stdout })
+      rl = createInterface({ input: child.stdout })
       rl.on('line', (line) => opts.onLine?.(line))
     }
+    // an open readline interface keeps the pipe and its buffered tail alive
+    // for the lifetime of the app, one per spawned engine process
+    const stopReading = (): void => rl?.close()
 
-    child.on('error', (err) => reject(friendlySpawnError(err)))
-    child.on('close', (code) => {
+    child.on('error', (err) => {
+      stopReading()
+      reject(friendlySpawnError(err))
+    })
+    child.on('close', (code, signal) => {
+      stopReading()
       if (job.cancelled || !jobs.has(job.videoId)) return reject(new Error('cancelled'))
       if (code === 0) return resolve()
       const detail =
         stderrTail.split('\n').filter(Boolean).slice(-2).join(' — ') ||
         stdoutTail.split('\n').filter(Boolean).slice(-1).join('')
+      const tool = cmd.split('/').pop()
+      /* memory is the failure that looks random: an out-of-memory kill leaves
+         no output behind (code null + SIGKILL), and a torch allocation failure
+         only says "CUDA out of memory". Say what it was, or the retry loop
+         never ends */
+      if (
+        (code === null && signal === 'SIGKILL' && !detail) ||
+        /(?:cuda|mps backend) out of memory|can(?:no|')t allocate memory|std::bad_alloc/i.test(detail)
+      ) {
+        reject(
+          new Error(
+            'Ran out of memory while splitting. Try again on its own (only one song at a time), ' +
+              'close other heavy apps, or turn off GPU acceleration in Settings.'
+          )
+        )
+        return
+      }
       reject(
         new Error(
           detail
-            ? `${cmd.split('/').pop()} exited (${code}): ${detail}`
-            : `${cmd.split('/').pop()} exited with code ${code}`
+            ? `${tool} exited (${code ?? signal}): ${detail}`
+            : `${tool} exited (${code ?? signal})`
         )
       )
     })
