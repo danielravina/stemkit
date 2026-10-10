@@ -117,6 +117,13 @@ export function roformerScript(): string {
   return join(app.getAppPath(), 'python', 'roformer.py')
 }
 
+export function chordsScript(): string {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, 'python', 'chords.py')
+  }
+  return join(app.getAppPath(), 'python', 'chords.py')
+}
+
 export function modelsDir(): string {
   return join(userDataDir(), 'models')
 }
