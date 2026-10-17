@@ -123,8 +123,16 @@ export function StemLane({
       draw()
       raf = requestAnimationFrame(animate)
     }
-    raf = requestAnimationFrame(animate)
-    return () => cancelAnimationFrame(raf)
+    draw()
+    if (playing) raf = requestAnimationFrame(animate)
+    const observer = new ResizeObserver(draw)
+    observer.observe(canvas)
+    window.addEventListener('resize', draw)
+    return () => {
+      cancelAnimationFrame(raf)
+      observer.disconnect()
+      window.removeEventListener('resize', draw)
+    }
   }, [peaks, duration, playing, getPosition, meta.color])
 
   const handleSeek = (e: React.MouseEvent<HTMLCanvasElement>): void => {
