@@ -32,9 +32,14 @@ function computePeaks(buffer: AudioBuffer): Float32Array {
 }
 
 interface Props {
-  meta: StemMeta
+  meta: Omit<StemMeta, 'id'>
   buffer: AudioBuffer | null
+  waveformPeaks?: Float32Array | null
+  disabled?: boolean
+  volumeLabel?: string
+  onVolumeCommit?: () => void
   duration: number
+  playing: boolean
   getPosition: () => number
   audible: boolean
   volume: number
@@ -52,7 +57,12 @@ interface Props {
 export function StemLane({
   meta,
   buffer,
+  waveformPeaks,
+  disabled = false,
+  volumeLabel,
+  onVolumeCommit,
   duration,
+  playing,
   getPosition,
   audible,
   volume,
@@ -67,7 +77,7 @@ export function StemLane({
   onExport
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const peaks = useMemo(() => (buffer ? computePeaks(buffer) : null), [buffer])
+  const peaks = useMemo(() => waveformPeaks ?? (buffer ? computePeaks(buffer) : null), [buffer, waveformPeaks])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -107,15 +117,26 @@ export function StemLane({
           ctx.fillRect(px - 0.75, 0, 1.5, h)
         }
       }
-      raf = requestAnimationFrame(draw)
     }
 
-    raf = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(raf)
-  }, [peaks, duration, getPosition, meta.color])
+    const animate = (): void => {
+      draw()
+      raf = requestAnimationFrame(animate)
+    }
+    draw()
+    if (playing) raf = requestAnimationFrame(animate)
+    const observer = new ResizeObserver(draw)
+    observer.observe(canvas)
+    window.addEventListener('resize', draw)
+    return () => {
+      cancelAnimationFrame(raf)
+      observer.disconnect()
+      window.removeEventListener('resize', draw)
+    }
+  }, [peaks, duration, playing, getPosition, meta.color])
 
   const handleSeek = (e: React.MouseEvent<HTMLCanvasElement>): void => {
-    if (!peaks || duration <= 0) return
+    if (disabled || !peaks || duration <= 0) return
     const rect = e.currentTarget.getBoundingClientRect()
     const frac = (e.clientX - rect.left) / rect.width
     onSeek(Math.max(0, Math.min(1, frac)) * duration)
@@ -123,6 +144,7 @@ export function StemLane({
 
   return (
     <div
+      aria-label={`${meta.label} track`}
       className={`group flex items-center gap-3 rounded-xl px-3 py-2 transition-all duration-200 glass ${
         audible ? 'opacity-100' : 'opacity-45'
       }`}
@@ -139,6 +161,9 @@ export function StemLane({
 
       <button
         onClick={onToggleMute}
+        aria-label={`Mute ${meta.label.toLowerCase()}`}
+        aria-pressed={muted}
+        disabled={disabled}
         title="Mute"
         className={`no-drag w-6 h-6 rounded-md text-[11px] font-bold transition-colors ${
           muted
@@ -150,6 +175,9 @@ export function StemLane({
       </button>
       <button
         onClick={onToggleSolo}
+        aria-label={`Solo ${meta.label.toLowerCase()}`}
+        aria-pressed={soloed}
+        disabled={disabled}
         title="Solo"
         className={`no-drag w-6 h-6 rounded-md text-[11px] font-bold transition-colors ${
           soloed
@@ -162,29 +190,36 @@ export function StemLane({
 
       <canvas
         ref={canvasRef}
+        aria-label={`${meta.label} waveform`}
         onClick={handleSeek}
         className="no-drag flex-1 h-14 rounded-lg cursor-pointer min-w-0"
       />
 
       <input
+        aria-label={volumeLabel ?? `${meta.label} volume`}
+        disabled={disabled}
         type="range"
         min={0}
         max={1}
         step={0.01}
         value={volume}
         onChange={(e) => onVolume(parseFloat(e.target.value))}
+        onPointerUp={onVolumeCommit} onPointerCancel={onVolumeCommit}
+        onKeyUp={onVolumeCommit} onBlur={onVolumeCommit}
         className="no-drag w-24 shrink-0"
         style={{
           background: `linear-gradient(to right, ${meta.color} ${volume * 100}%, rgba(255,255,255,0.14) ${volume * 100}%)`
         }}
       />
 
-      <PanKnob label={meta.label} color={meta.color} value={pan} onChange={onPan} />
+      <PanKnob label={meta.label} color={meta.color} value={pan} onChange={onPan} disabled={disabled} />
 
       {onExport && (
         <button
           onClick={onExport}
-          title="Export stem"
+          title={`Export ${meta.label.toLowerCase()}`}
+          aria-label={`Export ${meta.label.toLowerCase()}`}
+          disabled={disabled}
           className="no-drag w-6 h-6 rounded-md bg-white/5 hover:bg-white/10 text-white/40 hover:text-white flex items-center justify-center transition-colors shrink-0"
         >
           <DownloadIcon className="w-3.5 h-3.5" />

@@ -16,13 +16,16 @@
     "typecheck:web": "node scripts/run.cjs typecheck:web",
     "typecheck": "node scripts/run.cjs typecheck",
     "test:audio": "node scripts/run.cjs test:audio",
+    "test:count-in": "node scripts/run.cjs test:count-in",
     "dist": "node scripts/run.cjs dist",
     "dist:win": "node scripts/run.cjs dist:win",
     "dist:linux": "node scripts/run.cjs dist:linux",
-    "dist:all": "node scripts/run.cjs dist:all"
+    "dist:all": "node scripts/run.cjs dist:all",
+    "test:practice": "node scripts/run.cjs test:practice"
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "electron-updater": "^6.8.9",
+    "signalsmith-stretch": "1.3.2"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.6",

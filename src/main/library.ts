@@ -2,7 +2,8 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, openSync, r
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { userDataDir } from './env'
-import { DEFAULT_STEMS, type Song, type StemPanMap, type StemId } from '../shared/types'
+import { DEFAULT_STEMS, type Song, type StemPanMap, type MixChannelId } from '../shared/types'
+import { DEFAULT_TEMPO, type TempoSettings } from '../shared/types'
 
 // drives both the file-dialog filter and the pre-flight extension check in
 // startLocalJob; anything here is fair game for ffmpeg to decode
@@ -89,12 +90,12 @@ function panSong(videoId: string): Song {
 function normalizePan(song: Song, value: unknown): StemPanMap {
   const pans: StemPanMap = {}
   if (!value || typeof value !== 'object' || Array.isArray(value)) return pans
-  const allowed = new Set<StemId>(['vocals', 'drums', 'bass', 'other', 'piano', 'guitar'])
-  for (const id of stemsFor(song)) {
-    if (!allowed.has(id as StemId)) continue
+  const allowed = new Set<MixChannelId>(['vocals', 'drums', 'bass', 'other', 'piano', 'guitar', 'metronome'])
+  for (const id of [...stemsFor(song), 'metronome']) {
+    if (!allowed.has(id as MixChannelId)) continue
     const pan = (value as Record<string, unknown>)[id]
     if (typeof pan === 'number' && Number.isFinite(pan)) {
-      pans[id as StemId] = Math.max(-1, Math.min(1, pan))
+      pans[id as MixChannelId] = Math.max(-1, Math.min(1, pan))
     }
   }
   return pans
@@ -115,6 +116,35 @@ export function saveStemPan(videoId: string, pans: unknown): void {
   writeFileSync(join(songDir(videoId), 'pan.json'), JSON.stringify(normalizePan(song, pans), null, 2))
 }
 
+export function validateTempo(value: unknown): TempoSettings {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid tempo settings')
+  const { mode, manualBpm, sourceBpm, beatsPerBar } = value as TempoSettings
+  if ((mode !== 'auto' && mode !== 'manual') ||
+      (manualBpm !== null && (typeof manualBpm !== 'number' || !Number.isFinite(manualBpm) || manualBpm < 30 || manualBpm > 300)) ||
+      (mode === 'manual' && manualBpm === null) ||
+      (sourceBpm !== undefined && (typeof sourceBpm !== 'number' || !Number.isFinite(sourceBpm) || sourceBpm < 30 || sourceBpm > 300)) ||
+      !Number.isInteger(beatsPerBar) || beatsPerBar < 1 || beatsPerBar > 12) {
+    throw new Error('Invalid tempo settings')
+  }
+  return { mode, manualBpm, beatsPerBar, ...(sourceBpm === undefined ? {} : { sourceBpm }) }
+}
+
+export function loadTempoSettings(videoId: string): TempoSettings {
+  panSong(videoId)
+  try {
+    return validateTempo(JSON.parse(readFileSync(join(songDir(videoId), 'tempo.json'), 'utf8')))
+  } catch {
+    return { ...DEFAULT_TEMPO }
+  }
+}
+
+export function saveTempoSettings(videoId: string, settings: unknown): void {
+  panSong(videoId)
+  const value = validateTempo(settings)
+  // Do not recreate a deleted song directory for a late player save.
+  writeFileSync(join(songDir(videoId), 'tempo.json'), JSON.stringify(value, null, 2))
+}
+
 export function stemsPresent(videoId: string, stems: string[]): boolean {
   const dir = stemsDir(videoId)
   if (!existsSync(dir)) return false
@@ -124,7 +154,7 @@ export function stemsPresent(videoId: string, stems: string[]): boolean {
 // duration of a PCM wav by walking its RIFF chunks — used for local files,
 // which have no yt-dlp metadata to read the length from. Returns 0 when the
 // header can't be parsed (the player recovers from the decoded buffers)
-export function wavDuration(path: string): number {
+export function wavDuration(path: string, roundToSeconds = true): number {
   let fd: number | null = null
   try {
     fd = openSync(path, 'r')
@@ -150,7 +180,8 @@ export function wavDuration(path: string): number {
         bits = header.readUInt16LE(off + 22)
       } else if (id === 'data') {
         if (!sampleRate || !channels || !bits || size === 0) return 0
-        return Math.round(size / ((sampleRate * channels * bits) / 8))
+        const duration = size / ((sampleRate * channels * bits) / 8)
+        return roundToSeconds ? Math.round(duration) : duration
       }
       if (size === 0) return 0
       off += 8 + size + (size % 2)
