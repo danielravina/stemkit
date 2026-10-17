@@ -38,6 +38,9 @@ export interface Song {
 }
 
 export interface AppSettings {
+  countInBars: 0 | 1 | 2 | 3 | 4
+  metronomeEnabled: boolean
+  clickVolume: number
   shifts: 1 | 2
   htdemucsFt: boolean
   roformerVocals: boolean
@@ -56,6 +59,9 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  countInBars: 0,
+  metronomeEnabled: false,
+  clickVolume: 0.5,
   shifts: 1,
   htdemucsFt: false,
   roformerVocals: false,
@@ -139,8 +145,12 @@ export interface StemKitApi {
   getBuffers(videoId: string): Promise<Record<string, Uint8Array>>
   getStemPan(videoId: string): Promise<StemPanMap>
   setStemPan(videoId: string, pans: StemPanMap): Promise<void>
-  exportStem(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>
-  exportAllStems(videoId: string): Promise<{ saved: boolean; path?: string; count?: number }>
+  getTempoSettings(videoId: string): Promise<TempoSettings>
+  setTempoSettings(videoId: string, settings: TempoSettings): Promise<void>
+  analyzeTempo(videoId: string, requestId: string): Promise<TempoAnalysis>
+  cancelTempoAnalysis(requestId: string): Promise<void>
+  exportStem(videoId: string, stem: string, tempo?: TempoSettings): Promise<{ saved: boolean; path?: string }>
+  exportAllStems(videoId: string, tempo?: TempoSettings): Promise<{ saved: boolean; path?: string; count?: number; warning?: string }>
   searchYouTube(query: string): Promise<SearchResult[]>
   startJob(url: string, model?: string, stems?: string[]): Promise<{ started: boolean }>
   pickAudioFile(): Promise<string | null>

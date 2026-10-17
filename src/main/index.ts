@@ -8,11 +8,13 @@ import {
   type MenuItemConstructorOptions
 } from 'electron'
 import { join, normalize, extname } from 'path'
-import { existsSync, copyFileSync, mkdirSync, createReadStream, statSync } from 'fs'
+import { existsSync, copyFileSync, mkdirSync, createReadStream, statSync, writeFileSync, mkdtempSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+import { randomUUID } from 'crypto'
 import { spawn } from 'child_process'
 import { createServer, type Server } from 'http'
 import type { AddressInfo } from 'net'
-import type { AppSettings } from '../shared/types'
+import type { AppSettings, TempoSettings } from '../shared/types'
 import {
   detectTools,
   bootstrap,
@@ -32,13 +34,16 @@ import {
 import { loadSettings, saveSettings } from './settings'
 import {
   loadSongs, removeSong, stemBuffers, stemsDir, stemsFor, mixWavPath,
-  AUDIO_EXTENSIONS, loadStemPan, saveStemPan
+  AUDIO_EXTENSIONS, loadStemPan, saveStemPan, loadTempoSettings, saveTempoSettings, validateTempo, wavDuration
 } from './library'
 import { startJob, startLocalJob, cancelJob, searchYouTube } from './pipeline'
 import { initUpdater } from './updater'
 import { runSmoke } from './smoke'
 import { getThumb, clearThumbMemo } from './thumbs'
 import { maybePing } from './telemetry'
+import { analyzeSongTempo, cancelSongTempo } from './tempo'
+import { renderMetronomeWav } from './metronome-wav'
+import { manualBeats } from '../shared/metronome'
 
 let mainWindow: BrowserWindow | null = null
 let staticServer: Server | null = null
@@ -161,6 +166,29 @@ function transcodeToAac(ffmpeg: string, input: string, output: string): Promise<
   })
 }
 
+async function prepareMetronome(videoId: string, tempo: TempoSettings | undefined, owner: number): Promise<Buffer> {
+  if (!/^[\w-]+$/.test(videoId) || !loadSongs().some(song => song.videoId === videoId)) throw new Error('Unknown song')
+  const selection = tempo === undefined ? loadTempoSettings(videoId) : validateTempo(tempo)
+  const duration = wavDuration(mixWavPath(videoId), false)
+  const beats = selection.mode === 'manual'
+    ? manualBeats(selection.manualBpm ?? 0, duration)
+    : (await analyzeSongTempo(videoId, randomUUID(), owner)).beats
+  if (!beats.length) throw new Error('No reliable metronome beats found. Enter BPM manually to export the metronome.')
+  return renderMetronomeWav(beats, duration)
+}
+
+async function saveMetronome(wav: Buffer, destination: string, format: AppSettings['exportFormat']): Promise<void> {
+  if (format === 'wav') { writeFileSync(destination, wav); return }
+  const temporary = mkdtempSync(join(tmpdir(), 'stemkit-metronome-'))
+  try {
+    const source = join(temporary, 'metronome.wav')
+    writeFileSync(source, wav)
+    await transcodeToAac(requireExportFfmpeg(), source, destination)
+  } finally {
+    rmSync(temporary, { recursive: true, force: true })
+  }
+}
+
 async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1360,
@@ -249,6 +277,16 @@ app.whenReady().then(async () => {
   ipcMain.handle('library:list', () => loadSongs())
   ipcMain.handle('song:pan:get', (_e, videoId: string) => loadStemPan(videoId))
   ipcMain.handle('song:pan:set', (_e, videoId: string, pans: unknown) => saveStemPan(videoId, pans))
+  ipcMain.handle('song:tempo:get', (_e, videoId: string) => loadTempoSettings(videoId))
+  ipcMain.handle('song:tempo:set', (_e, videoId: string, settings: unknown) => saveTempoSettings(videoId, settings))
+  ipcMain.handle('song:tempo:analyze', async (event, videoId: string, requestId: string) => {
+    const owner = event.sender.id
+    const cancel = (): void => cancelSongTempo(requestId, owner)
+    event.sender.once('destroyed', cancel)
+    try { return await analyzeSongTempo(videoId, requestId, owner) }
+    finally { event.sender.removeListener('destroyed', cancel) }
+  })
+  ipcMain.handle('song:tempo:cancel', (event, requestId: string) => cancelSongTempo(requestId, event.sender.id))
   ipcMain.handle('library:delete', (_e, videoId: string) => removeSong(videoId))
   ipcMain.handle('song:buffers', (_e, videoId: string) => {
     const song = loadSongs().find((s) => s.videoId === videoId)
@@ -275,10 +313,10 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('jobs:cancel', (_e, videoId?: string) => cancelJob(videoId))
 
-  ipcMain.handle('stem:export', async (_e, videoId: string, stem: string) => {
+  ipcMain.handle('stem:export', async (_e, videoId: string, stem: string, tempo?: TempoSettings) => {
     const song = loadSongs().find((s) => s.videoId === videoId)
     const file = join(stemsDir(videoId), `${stem}.wav`)
-    if (!existsSync(file)) throw new Error(`Missing stem ${stem}`)
+    if (stem !== 'metronome' && !existsSync(file)) throw new Error(`Missing stem ${stem}`)
     const format = loadSettings().exportFormat
     const ext = format === 'aac' ? 'm4a' : 'wav'
     const result = await dialog.showSaveDialog({
@@ -290,7 +328,9 @@ app.whenReady().then(async () => {
       filters: [{ name: format === 'aac' ? 'AAC audio' : 'WAV audio', extensions: [ext] }]
     })
     if (result.canceled || !result.filePath) return { saved: false }
-    if (format === 'aac') {
+    if (stem === 'metronome') {
+      await saveMetronome(await prepareMetronome(videoId, tempo, _e.sender.id), result.filePath, format)
+    } else if (format === 'aac') {
       await transcodeToAac(requireExportFfmpeg(), file, result.filePath)
     } else {
       copyFileSync(file, result.filePath)
@@ -298,7 +338,7 @@ app.whenReady().then(async () => {
     return { saved: true, path: result.filePath }
   })
 
-  ipcMain.handle('stems:export-all', async (_e, videoId: string) => {
+  ipcMain.handle('stems:export-all', async (_e, videoId: string, tempo?: TempoSettings) => {
     const song = loadSongs().find((s) => s.videoId === videoId)
     const list = stemsFor(song)
     const dir = stemsDir(videoId)
@@ -325,12 +365,21 @@ app.whenReady().then(async () => {
     let count = list.length
     const mix = mixWavPath(videoId)
     if (existsSync(mix)) {
-      const mixDest = join(target, `${sanitizeName(song?.title ?? 'full track')}.${ext}`)
+      const mixName = sanitizeName(song?.title ?? 'full track')
+      const mixDest = join(target, `${mixName.toLowerCase() === 'metronome' ? `${mixName} - full track` : mixName}.${ext}`)
       if (ffmpeg) await transcodeToAac(ffmpeg, mix, mixDest)
       else copyFileSync(mix, mixDest)
       count += 1
     }
-    return { saved: true, path: target, count }
+    let metronome: Buffer | null = null
+    let warning: string | undefined
+    try { metronome = await prepareMetronome(videoId, tempo, _e.sender.id) }
+    catch (error) { warning = `Stems exported, but the metronome was skipped: ${error instanceof Error ? error.message : String(error)}` }
+    if (metronome) {
+      await saveMetronome(metronome, join(target, `metronome.${ext}`), format)
+      count += 1
+    }
+    return { saved: true, path: target, count, warning }
   })
 
   ipcMain.handle('search:youtube', (_e, query: string) => searchYouTube(query))
