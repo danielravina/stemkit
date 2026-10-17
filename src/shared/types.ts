@@ -1,5 +1,19 @@
 export type StemId = 'vocals' | 'drums' | 'bass' | 'other' | 'piano' | 'guitar'
-export type StemPanMap = Partial<Record<StemId, number>>
+export type MixChannelId = StemId | 'metronome'
+export type StemPanMap = Partial<Record<MixChannelId, number>>
+
+export interface TempoSettings {
+  mode: 'auto' | 'manual'
+  manualBpm: number | null
+  // Original section BPM anchors the saved practice ratio across seeks.
+  sourceBpm?: number
+  beatsPerBar: number
+}
+
+export const DEFAULT_TEMPO: TempoSettings = { mode: 'auto', manualBpm: null, beatsPerBar: 4 }
+
+export interface TempoPoint { start: number; bpm: number }
+export interface TempoAnalysis { points: TempoPoint[]; beats: number[] }
 
 // which GPU vendor GPU acceleration targets: NVIDIA via CUDA torch (windows
 // + linux), AMD via ROCm torch (linux only)
@@ -77,7 +91,7 @@ export interface EnvEvent {
   level: 'info' | 'error' | 'success'
 }
 
-export type JobStage = 'metadata' | 'download' | 'convert' | 'separate' | 'finalize'
+export type JobStage = 'metadata' | 'download' | 'convert' | 'separate' | 'analyze' | 'finalize'
 
 export interface JobProgress {
   videoId: string

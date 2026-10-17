@@ -9,6 +9,7 @@ const STAGES: { id: JobProgress['stage']; label: string }[] = [
   { id: 'download', label: 'Downloading audio' },
   { id: 'convert', label: 'Converting' },
   { id: 'separate', label: 'Separating stems' },
+  { id: 'analyze', label: 'Detecting tempo' },
   { id: 'finalize', label: 'Finishing up' }
 ]
 
@@ -60,7 +61,7 @@ export function Processing({
         return
       }
       if (j.stage !== 'separate') {
-        // finalize and beyond are instant; keep the last reading frozen
+        // The estimate covers separation, not tempo analysis or finalization.
         return
       }
       if (t.start === null) t.start = Date.now()
@@ -133,7 +134,7 @@ export function Processing({
           })}
         </div>
 
-        {timing && !error && (
+        {timing && !error && job?.stage === 'separate' && (
           <p className="mt-4 text-center text-[11px] font-mono text-white/35">
             elapsed {fmtTime(timing.elapsed)}
             {timing.left !== null ? ` · ~${fmtTime(timing.left)} left` : ' · estimating…'}

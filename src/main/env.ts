@@ -118,6 +118,25 @@ export function roformerScript(): string {
   return join(app.getAppPath(), 'python', 'roformer.py')
 }
 
+export function tempoScript(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'python', 'tempo.py')
+    : join(app.getAppPath(), 'python', 'tempo.py')
+}
+
+let tempoDeps: Promise<void> | null = null
+export function ensureTempoDeps(): Promise<void> {
+  if (!tempoDeps) {
+    tempoDeps = (async () => {
+      const version = await runCapture(venvPython(), ['-c', 'import importlib.metadata; print(importlib.metadata.version("librosa"))'], 20000).catch(() => '')
+      if (version.trim() === '0.11.0') return
+      sendEnvEvent('Preparing tempo analysis…')
+      await runCapture(venvPython(), ['-m', 'pip', 'install', '--disable-pip-version-check', 'librosa==0.11.0'], 300000)
+    })().catch(error => { tempoDeps = null; throw error })
+  }
+  return tempoDeps
+}
+
 export function modelsDir(): string {
   return join(userDataDir(), 'models')
 }
@@ -1243,6 +1262,7 @@ export async function bootstrap(): Promise<boolean> {
         `torch==${CPU_TORCH_VERSION}`,
         `torchaudio==${CPU_TORCH_VERSION}`,
         'numpy<2',
+        'librosa==0.11.0',
         'beartype',
         'rotary-embedding-torch',
         'einops',
