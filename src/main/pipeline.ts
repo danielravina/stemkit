@@ -35,12 +35,14 @@ import { MODEL_DEFAULT, MODEL_EXTENDED } from '../shared/types'
 import { parseVideoId } from '../shared/url'
 import { localSongId } from '../shared/local'
 import { cacheThumbnail } from './thumbs'
+import { analyzeImportedTempo, cancelImportedTempo } from './tempo'
 
 interface ActiveJob {
   videoId: string
   title?: string
   model: string
   cancelled: boolean
+  preserveExisting?: boolean
   proc?: ChildProcess
 }
 
@@ -138,11 +140,12 @@ function resolveEngine(requestedModel: string, stems?: string[]): EnginePlan {
 
 // library cache check + song dir prep, shared by both entry points. Sends
 // 'done' itself when the existing split already covers the request
-function reuseOrPrepare(
-  videoId: string,
+async function reuseOrPrepare(
+  job: ActiveJob,
   modelTag: string,
   stems?: string[]
-): { covered: boolean; addedAt: number } {
+): Promise<{ covered: boolean; addedAt: number }> {
+  const videoId = job.videoId
   const existing = loadSongs().find((s) => s.videoId === videoId)
   const covered =
     existing &&
@@ -150,6 +153,8 @@ function reuseOrPrepare(
     !!existing.stems?.length &&
     (stems?.length ? stems.every((s) => existing.stems!.includes(s)) : true)
   if (covered && stemsPresent(videoId, stemsFor(existing))) {
+    job.preserveExisting = true
+    await prepareTempo(job)
     send({ kind: 'done', data: { videoId, song: existing } })
     return { covered: true, addedAt: existing!.addedAt }
   }
@@ -189,11 +194,23 @@ async function convertToWav(job: ActiveJob, inputPath: string): Promise<void> {
   progress(job, 'convert', 100)
 }
 
-function finalizeJob(
+async function prepareTempo(job: ActiveJob): Promise<void> {
+  progress(job, 'analyze', 0, 'Detecting tempo')
+  try {
+    await analyzeImportedTempo(job.videoId)
+  } catch (error) {
+    if (!job.cancelled) console.warn('Could not detect tempo during import:', error)
+  }
+  if (job.cancelled || jobs.get(job.videoId) !== job) throw new Error('cancelled')
+  progress(job, 'analyze', 100, 'Tempo analysis finished')
+}
+
+async function finalizeJob(
   job: ActiveJob,
   info: { title: string; duration: number; addedAt: number; startedAt: number; source?: 'local' },
   producedStems: string[]
-): void {
+): Promise<void> {
+  await prepareTempo(job)
   progress(job, 'finalize', 100, 'Adding to library')
   const took = Math.round((Date.now() - info.startedAt) / 1000)
   const songs = upsertSong({
@@ -235,7 +252,7 @@ export async function startJob(
   }
 
   try {
-    const { covered, addedAt } = reuseOrPrepare(videoId, plan.modelTag, stems)
+    const { covered, addedAt } = await reuseOrPrepare(job, plan.modelTag, stems)
     if (covered) return
 
     progress(job, 'metadata', 0, 'Reading video info')
@@ -303,14 +320,14 @@ export async function startJob(
 
     const producedStems = await runSeparation(job, plan, stems)
     if (job.cancelled || !jobs.has(videoId)) return
-    finalizeJob(job, { title: meta!.title, duration: meta!.duration, addedAt, startedAt }, producedStems)
+    await finalizeJob(job, { title: meta!.title, duration: meta!.duration, addedAt, startedAt }, producedStems)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (message !== 'cancelled') {
       send({ kind: 'failed', data: { videoId, message } })
     }
   } finally {
-    jobs.delete(videoId)
+    if (jobs.get(videoId) === job) jobs.delete(videoId)
   }
 }
 
@@ -358,7 +375,7 @@ export async function startLocalJob(
   const startedAt = Date.now()
 
   try {
-    const { covered, addedAt } = reuseOrPrepare(videoId, plan.modelTag, stems)
+    const { covered, addedAt } = await reuseOrPrepare(job, plan.modelTag, stems)
     if (covered) return
 
     // no metadata/download stages for local files: ffmpeg reads the source
@@ -368,14 +385,14 @@ export async function startLocalJob(
 
     const producedStems = await runSeparation(job, plan, stems)
     if (job.cancelled || !jobs.has(videoId)) return
-    finalizeJob(job, { title, duration, addedAt, startedAt, source: 'local' }, producedStems)
+    await finalizeJob(job, { title, duration, addedAt, startedAt, source: 'local' }, producedStems)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (message !== 'cancelled') {
       send({ kind: 'failed', data: { videoId, message } })
     }
   } finally {
-    jobs.delete(videoId)
+    if (jobs.get(videoId) === job) jobs.delete(videoId)
   }
 }
 
@@ -722,8 +739,8 @@ export async function searchYouTube(query: string): Promise<
   }
 }
 
-function killTree(proc: ChildProcess): void {
-  if (!proc.pid) return
+function killTree(proc?: ChildProcess): void {
+  if (!proc?.pid) return
   if (process.platform === 'win32') {
     try {
       spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'])
@@ -741,9 +758,10 @@ export function cancelJob(videoId?: string): void {
     : Array.from(jobs.values())
   for (const job of targets) {
     job.cancelled = true
-    killTree(job.proc as ChildProcess)
+    cancelImportedTempo(job.videoId)
+    killTree(job.proc)
     jobs.delete(job.videoId)
-    rmSync(songDir(job.videoId), { recursive: true, force: true })
+    if (!job.preserveExisting) rmSync(songDir(job.videoId), { recursive: true, force: true })
     send({ kind: 'failed', data: { videoId: job.videoId, message: 'Cancelled' } })
   }
 }

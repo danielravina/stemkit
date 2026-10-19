@@ -12,6 +12,7 @@ const PRESETS: { id: PresetId; label: string }[] = [
 ]
 
 interface Props {
+  countIn?: React.ReactNode
   playing: boolean
   duration: number
   getPosition: () => number
@@ -155,7 +156,8 @@ export function Transport({
   onPreset,
   master,
   onMaster,
-  youtubeUrl
+  youtubeUrl,
+  countIn
 }: Props): React.ReactElement {
   // onSeek clamps to the track bounds, so no need to guard here
   const skip = (seconds: number): void => onSeek(getPosition() + seconds)
@@ -167,9 +169,21 @@ export function Transport({
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => onSeek(0)}
+            disabled={duration === 0}
+            title="Back to start"
+            aria-label="Back to start"
+            className="no-drag w-9 h-9 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40 disabled:hover:bg-transparent"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <path d="M5 5h2v14H5zM19 5v14l-10-7z" />
+            </svg>
+          </button>
           <SkipButton direction={-1} shiftHeld={shiftHeld} disabled={duration === 0} onSkip={skip} />
           <button
             onClick={onTogglePlay}
+            aria-label={playing ? 'Pause or cancel count-in' : 'Play'}
             disabled={duration === 0}
             className="no-drag w-11 h-11 mx-1 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-violet-500/20 disabled:opacity-40 disabled:hover:scale-100"
           >
@@ -227,6 +241,7 @@ export function Transport({
           </button>
         )}
       </div>
+      {countIn}
     </div>
   )
 }

@@ -1,5 +1,19 @@
 export type StemId = 'vocals' | 'drums' | 'bass' | 'other' | 'piano' | 'guitar'
-export type StemPanMap = Partial<Record<StemId, number>>
+export type MixChannelId = StemId | 'metronome'
+export type StemPanMap = Partial<Record<MixChannelId, number>>
+
+export interface TempoSettings {
+  mode: 'auto' | 'manual'
+  manualBpm: number | null
+  // Original section BPM anchors the saved practice ratio across seeks.
+  sourceBpm?: number
+  beatsPerBar: number
+}
+
+export const DEFAULT_TEMPO: TempoSettings = { mode: 'auto', manualBpm: null, beatsPerBar: 4 }
+
+export interface TempoPoint { start: number; bpm: number }
+export interface TempoAnalysis { points: TempoPoint[]; beats: number[] }
 
 // which GPU vendor GPU acceleration targets: NVIDIA via CUDA torch (windows
 // + linux), AMD via ROCm torch (linux only)
@@ -24,6 +38,9 @@ export interface Song {
 }
 
 export interface AppSettings {
+  countInBars: 0 | 1 | 2 | 3 | 4
+  metronomeEnabled: boolean
+  clickVolume: number
   shifts: 1 | 2
   htdemucsFt: boolean
   roformerVocals: boolean
@@ -42,6 +59,9 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
+  countInBars: 0,
+  metronomeEnabled: false,
+  clickVolume: 0.5,
   shifts: 1,
   htdemucsFt: false,
   roformerVocals: false,
@@ -77,7 +97,7 @@ export interface EnvEvent {
   level: 'info' | 'error' | 'success'
 }
 
-export type JobStage = 'metadata' | 'download' | 'convert' | 'separate' | 'finalize'
+export type JobStage = 'metadata' | 'download' | 'convert' | 'separate' | 'analyze' | 'finalize'
 
 export interface JobProgress {
   videoId: string
@@ -125,8 +145,12 @@ export interface StemKitApi {
   getBuffers(videoId: string): Promise<Record<string, Uint8Array>>
   getStemPan(videoId: string): Promise<StemPanMap>
   setStemPan(videoId: string, pans: StemPanMap): Promise<void>
-  exportStem(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>
-  exportAllStems(videoId: string): Promise<{ saved: boolean; path?: string; count?: number }>
+  getTempoSettings(videoId: string): Promise<TempoSettings>
+  setTempoSettings(videoId: string, settings: TempoSettings): Promise<void>
+  analyzeTempo(videoId: string, requestId: string): Promise<TempoAnalysis>
+  cancelTempoAnalysis(requestId: string): Promise<void>
+  exportStem(videoId: string, stem: string, tempo?: TempoSettings): Promise<{ saved: boolean; path?: string }>
+  exportAllStems(videoId: string, tempo?: TempoSettings): Promise<{ saved: boolean; path?: string; count?: number; warning?: string }>
   searchYouTube(query: string): Promise<SearchResult[]>
   startJob(url: string, model?: string, stems?: string[]): Promise<{ started: boolean }>
   pickAudioFile(): Promise<string | null>

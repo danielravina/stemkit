@@ -34,6 +34,8 @@ interface YTPlayerLike {
   getCurrentTime(): number
   getDuration(): number
   getPlaybackRate(): number
+  getAvailablePlaybackRates(): number[]
+  setPlaybackRate(rate: number): void
   mute(): void
   destroy(): void
   loadVideoById(id: string): void
@@ -112,6 +114,14 @@ export class YouTubeHost {
 
   duration(): number {
     return this.player?.getDuration() ?? 0
+  }
+
+  setRate(rate: number): void {
+    // YouTube offers discrete rates; source audio remains the timing authority.
+    const available = this.player?.getAvailablePlaybackRates() ?? []
+    if (!available.length) return
+    const nearest = available.reduce((best, value) => Math.abs(value - rate) < Math.abs(best - rate) ? value : best)
+    this.player?.setPlaybackRate(nearest)
   }
 
   rate(): number {

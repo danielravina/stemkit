@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AppSettings, Song, StemId, StemPanMap } from '../../../shared/types'
+import { DEFAULT_TEMPO, type AppSettings, type Song, type StemId, type MixChannelId, type StemPanMap, type TempoSettings, type TempoAnalysis } from '../../../shared/types'
 import { engine, decodePayload, type BufferMap } from '../lib/engine'
 import { buildStemMeta } from '../lib/stems'
 import { fmtTime } from '../lib/format'
@@ -8,6 +8,10 @@ import { YouTubeHost, type YTState } from '../lib/youtube'
 import { StemLane } from './StemLane'
 import { Transport, type PresetId } from './Transport'
 import { DownloadIcon } from './Icons'
+import { TempoDetector, tempoAt, manualBeats, practiceRate, playbackAnalysis } from '../lib/tempo-client'
+import { metronomePeaks } from '../../../shared/metronome'
+import { CountInControls } from './CountInControls'
+import { MetronomeLane } from './MetronomeLane'
 
 // number keys 1-6 mute the lane shown in that position, top to bottom
 const STEM_KEYS = ['1', '2', '3', '4', '5', '6']
@@ -42,6 +46,21 @@ export function Player({ song, settings }: Props): React.ReactElement {
   const posRef = useRef(0)
   const playingRef = useRef(false)
   const videoSyncAtRef = useRef(0)
+  const phaseRef = useRef<'paused' | 'analyzing' | 'counting' | 'playing'>('paused')
+  const playRequest = useRef(0)
+  const detector = useRef(new TempoDetector())
+  const visualDetector = useRef(new TempoDetector())
+  const visualAnalysis = useRef<TempoAnalysis | null>(null)
+  const [detectingTempo, setDetectingTempo] = useState(true)
+  const [visualBeats, setVisualBeats] = useState<{ songId: string; beats: number[] } | null>(null)
+  const tempoRevision = useRef(0)
+  const [tempo, setTempo] = useState<TempoSettings>({ ...DEFAULT_TEMPO })
+  const [detectedBpm, setDetectedBpm] = useState<number | null>(null)
+  const [countInBars, setCountInBars] = useState<0 | 1 | 2 | 3 | 4>(settings?.countInBars ?? 0)
+  const [clickVolume, setClickVolume] = useState(settings?.clickVolume ?? 0.5)
+  const autoAnalysis = useRef<TempoAnalysis | null>(null)
+  const [countError, setCountError] = useState<string | null>(null)
+  const [tempoSaveError, setTempoSaveError] = useState<string | null>(null)
 
   const VIDEO_DRIFT_LIMIT = 0.4
   const VIDEO_RESYNC_COOLDOWN = 2000
@@ -62,12 +81,99 @@ export function Player({ song, settings }: Props): React.ReactElement {
   const pendingPan = useRef<{ videoId: string; pans: StemPanMap } | null>(null)
   const panGeneration = useRef(0)
   const panRevision = useRef(0)
-  const [mutes, setMutes] = useState<Set<StemId>>(new Set())
-  const [solos, setSolos] = useState<Set<StemId>>(new Set())
+  const [mutes, setMutes] = useState<Set<MixChannelId>>(new Set(settings?.metronomeEnabled ? [] : ['metronome']))
+  const [solos, setSolos] = useState<Set<MixChannelId>>(new Set())
+  const metronomeEnabled = !mutes.has('metronome')
+  const metronomeAudible = metronomeEnabled && (solos.size === 0 || solos.has('metronome'))
   const [master, setMaster] = useState(0.9)
   const [preset, setPreset] = useState<PresetId | 'custom'>('all')
 
+  const cancelPlayback = useCallback((): void => {
+    ++playRequest.current
+    detector.current.cancel()
+    if (playingRef.current) posRef.current = engine.expected()
+    playingRef.current = false
+    phaseRef.current = 'paused'
+    engine.setPlaying(false, posRef.current)
+    hostRef.current?.pause()
+    setPlaying(false)
+  }, [])
+
+  useEffect(() => {
+    const bars = settings?.countInBars ?? 0
+    if (bars !== countInBars) {
+      setCountInBars(bars)
+      if (phaseRef.current === 'analyzing' || phaseRef.current === 'counting') cancelPlayback()
+    }
+  }, [settings?.countInBars, cancelPlayback])
+
+  useEffect(() => {
+    setMutes(previous => {
+      const next = new Set(previous)
+      if (settings?.metronomeEnabled) next.delete('metronome')
+      else next.add('metronome')
+      return next
+    })
+  }, [settings?.metronomeEnabled])
+
+  useEffect(() => {
+    const volume = settings?.clickVolume ?? 0.5
+    setClickVolume(volume)
+    engine.setClickVolume(volume)
+  }, [settings?.clickVolume])
+
+  useEffect(() => {
+    if (phaseRef.current === 'analyzing') { cancelPlayback(); return }
+    if (phaseRef.current !== 'playing' && phaseRef.current !== 'counting') return
+    let cancelled = false
+    void (async () => {
+      const analysis = visualAnalysis.current ?? await playbackAnalysis(detector.current, song.videoId, tempo.mode === 'manual')
+      if (cancelled || phaseRef.current === 'paused' || phaseRef.current === 'analyzing') return
+      autoAnalysis.current = analysis
+      const rate = practiceRate(tempo, analysis)
+      const beats = analysis.beats.length ? analysis.beats : manualBeats((tempo.manualBpm ?? 0) / rate, engine.trackDuration())
+      engine.setMetronome(metronomeAudible ? beats : null)
+      const applied = await engine.setRate(rate)
+      if (applied && !cancelled) hostRef.current?.setRate(rate)
+      if (metronomeAudible && !beats.length) throw new Error('No reliable beats found. Enter BPM manually or turn the metronome Off.')
+    })().catch(error => {
+      if (cancelled || (error instanceof Error && error.name === 'AbortError')) return
+      cancelPlayback()
+      setCountError(error instanceof Error ? error.message : 'Could not change practice tempo.')
+    })
+    return () => { cancelled = true }
+  }, [metronomeAudible, tempo, song.videoId, cancelPlayback])
+
   const stemMeta = useMemo(() => buildStemMeta(Object.keys(buffers) as StemId[]), [buffers])
+
+  useEffect(() => {
+    setVisualBeats(null)
+    visualAnalysis.current = null
+    setDetectingTempo(true)
+    if (decoding || decodeError) return
+    let cancelled = false
+    const analyzer = visualDetector.current
+    void analyzer.analyze(song.videoId).then(analysis => {
+      if (cancelled) return
+      visualAnalysis.current = analysis
+      setVisualBeats({ songId: song.videoId, beats: analysis.beats })
+      setDetectedBpm(tempoAt(analysis.points, posRef.current))
+      setDetectingTempo(false)
+    }).catch(() => {
+      if (!cancelled) {
+        visualAnalysis.current = { points: [], beats: [] }
+        setVisualBeats({ songId: song.videoId, beats: [] })
+        setDetectingTempo(false)
+      }
+    })
+    return () => { cancelled = true; analyzer.cancel() }
+  }, [song.videoId, decoding, decodeError])
+
+  const metronomeWaveform = useMemo(() => {
+    const beats = visualBeats?.songId === song.videoId && visualBeats.beats.length ? visualBeats.beats
+      : tempo.mode === 'manual' ? manualBeats(tempo.sourceBpm ?? tempo.manualBpm ?? 0, duration) : null
+    return beats ? metronomePeaks(beats, duration) : null
+  }, [visualBeats, song.videoId, duration, tempo.mode, tempo.manualBpm, tempo.sourceBpm])
 
   // local files have no video to sync: the player runs audio-only, with a
   // placeholder panel where the YouTube iframe would be
@@ -83,6 +189,13 @@ export function Player({ song, settings }: Props): React.ReactElement {
   })
 
   useEffect(() => {
+    cancelPlayback()
+    ++tempoRevision.current
+    setTempo({ ...DEFAULT_TEMPO })
+    autoAnalysis.current = null
+    setDetectedBpm(null)
+    setCountError(null)
+    setTempoSaveError(null)
     const generation = ++panGeneration.current
     setPans({})
     pansRef.current = {}
@@ -96,7 +209,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
     setBuffers({})
     setDuration(song.duration || 0)
     setVols({})
-    setMutes(new Set())
+    setMutes(previous => new Set(previous.has('metronome') ? ['metronome'] : []))
     setSolos(new Set())
     setPreset('all')
     engine.stopAll()
@@ -116,16 +229,21 @@ export function Player({ song, settings }: Props): React.ReactElement {
       window.stemkit.getStemPan(song.videoId).catch(() => {
         if (!cancelled) setPanError('Could not load saved pan settings. Using center.')
         return {} as StemPanMap
+      }),
+      window.stemkit.getTempoSettings(song.videoId).catch(() => {
+        if (!cancelled) setTempoSaveError('Could not load tempo settings. Using Auto and 4 beats per bar.')
+        return { ...DEFAULT_TEMPO }
       })
     ])
-      .then(([decoded, savedPan]) => {
+      .then(([decoded, savedPan, savedTempo]) => {
         if (cancelled) return
-        const initialPans = Object.fromEntries(Object.keys(decoded).map((id) => {
-          const value = savedPan[id as StemId]
+        const initialPans = Object.fromEntries([...Object.keys(decoded), 'metronome'].map((id) => {
+          const value = savedPan[id as MixChannelId]
           return [id, typeof value === 'number' && Number.isFinite(value) ? Math.max(-1, Math.min(1, value)) : 0]
         })) as StemPanMap
         pansRef.current = initialPans
         setPans(initialPans)
+        setTempo(savedTempo)
         setBuffers(decoded)
         engine.setBuffers(decoded)
         setVols(Object.fromEntries(Object.keys(decoded).map((id) => [id, 1])))
@@ -141,6 +259,8 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
     return () => {
       cancelled = true
+      cancelPlayback()
+      ++tempoRevision.current
       if (panGeneration.current === generation) ++panGeneration.current
       window.removeEventListener('beforeunload', flushPan)
       flushPan()
@@ -148,7 +268,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
       hostRef.current?.destroy()
       hostRef.current = null
     }
-  }, [song.videoId])
+  }, [song.videoId, cancelPlayback])
 
   useEffect(() => {
     if (!showVideo) {
@@ -175,7 +295,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
         }
       })
       .then(() => {
-        if (!disposed) setYtReady(true)
+        if (!disposed) { host.setRate(engine.rate); setYtReady(true) }
       })
 
     return () => {
@@ -190,7 +310,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
     engine.applyMix(vols, mutes, solos, master, pans)
   }, [vols, mutes, solos, master, pans])
 
-  const changePan = (id: StemId, value: number): void => {
+  const changePan = (id: MixChannelId, value: number): void => {
     const next = { ...pansRef.current, [id]: value }
     pansRef.current = next
     setPans(next)
@@ -217,12 +337,24 @@ export function Player({ song, settings }: Props): React.ReactElement {
     if (!playing) return
     let raf = 0
     const tick = (): void => {
+      if (phaseRef.current === 'paused' || phaseRef.current === 'analyzing') return
+      if (engine.phase() === 'counting') return
+      if (phaseRef.current === 'counting') {
+        phaseRef.current = 'playing'
+        playingRef.current = true
+        hostRef.current?.setRate(engine.rate)
+        hostRef.current?.seek(engine.expected())
+        hostRef.current?.play()
+      }
       posRef.current = engine.expected()
+      const analysis = autoAnalysis.current ?? visualAnalysis.current
+      if (analysis) setDetectedBpm(tempoAt(analysis.points, posRef.current))
 
       const dur = engine.trackDuration()
       if (dur > 0 && posRef.current >= dur - 0.03) {
         posRef.current = dur
         engine.stopAll()
+        phaseRef.current = 'paused'
         playingRef.current = false
         setPlaying(false)
         hostRef.current?.pause()
@@ -249,7 +381,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
       cancelAnimationFrame(raf)
       clearInterval(backup)
     }
-  }, [playing])
+  }, [playing, countInBars, tempo])
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -263,64 +395,173 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
   const togglePlay = useCallback((): void => {
     if (decoding || decodeError) return
-    if (playingRef.current) {
-      playingRef.current = false
-      engine.setPlaying(false, posRef.current)
-      hostRef.current?.pause()
-      setPlaying(false)
-    } else {
-      playingRef.current = true
-      engine.resume()
-      engine.setPlaying(true, posRef.current)
-      hostRef.current?.play()
-      setPlaying(true)
+    if (phaseRef.current !== 'paused') {
+      cancelPlayback()
+      return
     }
-  }, [decoding, decodeError, showVideo])
+    const request = ++playRequest.current
+    if (posRef.current >= engine.trackDuration() - 0.05) posRef.current = 0
+    const position = posRef.current
+    phaseRef.current = 'analyzing'
+    setPlaying(true)
+    setCountError(null)
+    const needsTempo = !!countInBars || metronomeAudible
+    void (async () => {
+      try {
+        const analysis = visualAnalysis.current ?? (needsTempo || tempo.mode === 'manual'
+          ? await playbackAnalysis(detector.current, song.videoId, tempo.mode === 'manual') : null)
+        const rate = practiceRate(tempo, analysis)
+        const localBpm = analysis ? tempoAt(analysis.points, position) : null
+        const bpm = needsTempo ? localBpm !== null ? localBpm * rate : tempo.manualBpm : null
+        if (request !== playRequest.current) return
+        if (needsTempo && bpm === null) {
+          cancelPlayback()
+          setDetectedBpm(null)
+          setCountError(tempo.mode === 'manual'
+            ? 'Enter a BPM between 30 and 300, or turn clicks Off.'
+            : 'No reliable tempo found here. Enter BPM manually or turn clicks Off.')
+          return
+        }
+        autoAnalysis.current = analysis
+        if (needsTempo && tempo.mode === 'auto') setDetectedBpm(bpm)
+        const beats = metronomeAudible ? analysis?.beats.length ? analysis.beats : manualBeats((bpm ?? 0) / rate, engine.trackDuration()) : null
+        if (metronomeAudible && !beats?.length) {
+          cancelPlayback()
+          setCountError('No reliable beats found. Enter BPM manually or turn the metronome Off.')
+          return
+        }
+        const applied = await engine.setRate(rate)
+        if (!applied || request !== playRequest.current) return
+        hostRef.current?.setRate(rate)
+        engine.setMetronome(beats)
+        const started = await engine.start(position, countInBars && bpm !== null ? { bars: countInBars, bpm, beatsPerBar: tempo.beatsPerBar } : undefined)
+        if (!started || request !== playRequest.current) return
+        if (countInBars) {
+          phaseRef.current = 'counting'
+        } else {
+          phaseRef.current = 'playing'
+          playingRef.current = true
+          hostRef.current?.play()
+        }
+      } catch (error) {
+        if (request !== playRequest.current) return
+        cancelPlayback()
+        setCountError(error instanceof Error ? error.message : 'Could not start playback.')
+      }
+    })()
+  }, [decoding, decodeError, cancelPlayback, countInBars, tempo, song.videoId, metronomeAudible])
 
   const seekTo = useCallback(
     (t: number): void => {
+      if (phaseRef.current === 'analyzing' || phaseRef.current === 'counting') cancelPlayback()
       const clamped = Math.max(0, Math.min(duration > 0 ? duration - 0.05 : t, t))
+      const analysis = autoAnalysis.current ?? visualAnalysis.current
+      setDetectedBpm(analysis ? tempoAt(analysis.points, clamped) : null)
+      setCountError(null)
       posRef.current = clamped
-      engine.setPlaying(playingRef.current, clamped)
+      void engine.setPlaying(playingRef.current, clamped).then(applied => {
+        if (applied) hostRef.current?.setRate(engine.rate)
+      }).catch(error => {
+        cancelPlayback()
+        setCountError(error instanceof Error ? error.message : 'Could not seek playback.')
+      })
       videoSyncAtRef.current = performance.now()
       hostRef.current?.seek(clamped)
       setBump((n) => n + 1)
     },
-    [duration]
+    [duration, cancelPlayback, tempo.mode]
   )
+
+  const changeTempo = (next: TempoSettings): void => {
+    if (phaseRef.current === 'analyzing' || phaseRef.current === 'counting') cancelPlayback()
+    setTempo(next)
+    setCountError(null)
+    const revision = ++tempoRevision.current
+    if (next.mode === 'manual' && next.manualBpm === null) return
+    void window.stemkit.setTempoSettings(song.videoId, next).then(() => {
+      if (revision === tempoRevision.current) setTempoSaveError(null)
+    }).catch(() => {
+      if (revision === tempoRevision.current) setTempoSaveError('Could not save tempo settings. Your live settings are still applied.')
+    })
+  }
+
+  const changeCountInBars = (bars: 0 | 1 | 2 | 3 | 4): void => {
+    if (phaseRef.current === 'analyzing' || phaseRef.current === 'counting') cancelPlayback()
+    setCountInBars(bars)
+    setCountError(null)
+    const revision = ++tempoRevision.current
+    void window.stemkit.setSettings({ countInBars: bars }).then(() => {
+      if (revision === tempoRevision.current) setTempoSaveError(null)
+    }).catch(() => {
+      if (revision === tempoRevision.current) setTempoSaveError('Could not save count-in preference. Your live selection is still applied.')
+    })
+  }
+
+  const changeClickVolume = (volume: number): void => {
+    setClickVolume(volume)
+    engine.setClickVolume(volume)
+  }
+
+  const saveClickVolume = (): void => {
+    if (clickVolume === settings?.clickVolume) return
+    void window.stemkit.setSettings({ clickVolume }).catch(() => {
+      setTempoSaveError('Could not save click volume. Your live volume is still applied.')
+    })
+  }
 
   const getPosition = useCallback((): number => {
     void bump
     return posRef.current
   }, [bump])
 
+  // Practice speed affects playback only; downloads keep the original song's timing.
+  const exportTempo = (): TempoSettings => {
+    if (visualAnalysis.current?.beats.length) return { ...tempo, mode: 'auto', manualBpm: null }
+    if (tempo.sourceBpm) return { ...tempo, mode: 'manual', manualBpm: tempo.sourceBpm }
+    return visualAnalysis.current ? tempo : { ...tempo, mode: 'auto', manualBpm: null }
+  }
+
   const exportStem = useCallback(
     (stem: string): void => {
-      void window.stemkit.exportStem(song.videoId, stem)
+      void window.stemkit.exportStem(song.videoId, stem, stem === 'metronome' ? exportTempo() : undefined).catch(error => {
+        setCountError(error instanceof Error ? error.message : 'Could not export the track.')
+      })
     },
-    [song.videoId]
+    [song.videoId, tempo]
   )
 
   const exportAllStems = useCallback((): void => {
-    void window.stemkit.exportAllStems(song.videoId)
-  }, [song.videoId])
+    void window.stemkit.exportAllStems(song.videoId, exportTempo()).then(result => {
+      if (result.warning) setCountError(result.warning)
+    }).catch(error => {
+      setCountError(error instanceof Error ? error.message : 'Could not export tracks.')
+    })
+  }, [song.videoId, tempo])
 
 
 
   const applyPreset = (p: PresetId): void => {
     setPreset(p)
-    setMutes(new Set())
+    setMutes(previous => new Set(previous.has('metronome') ? ['metronome'] : []))
     if (p === 'all') setSolos(new Set())
     else if (p === 'karaoke')
-      setSolos(new Set<StemId>(stemMeta.filter((s) => s.id !== 'vocals').map((s) => s.id)))
-    else if (p === 'acapella') setSolos(new Set<StemId>(['vocals']))
-    else if (p === 'drumnbass') setSolos(new Set<StemId>(['drums', 'bass']))
+      setSolos(new Set<MixChannelId>(stemMeta.filter((s) => s.id !== 'vocals').map((s) => s.id)))
+    else if (p === 'acapella') setSolos(new Set<MixChannelId>(['vocals']))
+    else if (p === 'drumnbass') setSolos(new Set<MixChannelId>(['drums', 'bass']))
   }
 
   const toggleMute = useCallback(
-    (id: StemId): void => {
+    (id: MixChannelId): void => {
       setPreset('custom')
       const turningOn = !mutes.has(id)
+      if (id === 'metronome') {
+        if (phaseRef.current === 'analyzing') cancelPlayback()
+        setCountError(null)
+        if (turningOn) engine.setMetronome(null)
+        void window.stemkit.setSettings({ metronomeEnabled: !turningOn }).catch(() => {
+          setTempoSaveError('Could not save metronome preference. Your live selection is still applied.')
+        })
+      }
       if (turningOn && solos.has(id)) {
         setSolos((prev) => {
           const next = new Set(prev)
@@ -335,12 +576,12 @@ export function Player({ song, settings }: Props): React.ReactElement {
         return next
       })
     },
-    [mutes, solos]
+    [mutes, solos, cancelPlayback]
   )
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.target instanceof HTMLInputElement) return
+      if (e.target instanceof HTMLElement && (e.target.closest('input, select, textarea') || e.target.isContentEditable)) return
       if (e.code === 'Space') {
         e.preventDefault()
         togglePlay()
@@ -360,10 +601,15 @@ export function Player({ song, settings }: Props): React.ReactElement {
     return () => window.removeEventListener('keydown', onKey)
   }, [togglePlay, toggleMute, stemMeta, seekTo, decoding, decodeError])
 
-  const toggleSolo = (id: StemId): void => {
+  const toggleSolo = (id: MixChannelId): void => {
     setPreset('custom')
     const turningOn = !solos.has(id)
     if (turningOn && mutes.has(id)) {
+      if (id === 'metronome') {
+        void window.stemkit.setSettings({ metronomeEnabled: true }).catch(() => {
+          setTempoSaveError('Could not save metronome preference. Your live selection is still applied.')
+        })
+      }
       setMutes((prev) => {
         const next = new Set(prev)
         next.delete(id)
@@ -377,6 +623,10 @@ export function Player({ song, settings }: Props): React.ReactElement {
       return next
     })
   }
+
+  const controlTempo = tempo.mode === 'manual' && tempo.sourceBpm === undefined
+    ? { ...tempo, sourceBpm: (autoAnalysis.current ?? visualAnalysis.current)?.points[0]?.bpm }
+    : tempo
 
   return (
     <div className="h-full flex flex-col">
@@ -474,6 +724,16 @@ export function Player({ song, settings }: Props): React.ReactElement {
             master={master}
             onMaster={setMaster}
             youtubeUrl={youtubeUrl ?? undefined}
+            countIn={<CountInControls
+              bars={countInBars}
+              onBars={changeCountInBars}
+              tempo={controlTempo}
+              onTempo={changeTempo}
+              detectedBpm={detectedBpm}
+              detectingTempo={detectingTempo}
+              error={countError ?? tempoSaveError}
+              disabled={decoding || !!decodeError}
+            />}
           />
 
           {panError && <p role="status" className="mt-3 text-xs text-amber-300">{panError}</p>}
@@ -492,6 +752,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
                 meta={meta}
                 buffer={buffers[meta.id] ?? null}
                 duration={duration}
+                playing={playing}
                 getPosition={getPosition}
                 audible={!mutes.has(meta.id) && (solos.size === 0 || solos.has(meta.id))}
                 volume={vols[meta.id] ?? 1}
@@ -506,6 +767,25 @@ export function Player({ song, settings }: Props): React.ReactElement {
                 onExport={() => exportStem(meta.id)}
               />
             ))}
+            <MetronomeLane
+              muted={!metronomeEnabled}
+              soloed={solos.has('metronome')}
+              audible={metronomeAudible}
+              onToggleMute={() => toggleMute('metronome')}
+              onToggleSolo={() => toggleSolo('metronome')}
+              volume={clickVolume}
+              onVolume={changeClickVolume}
+              onVolumeCommit={saveClickVolume}
+              onExport={() => exportStem('metronome')}
+              pan={pans.metronome ?? 0}
+              onPan={value => changePan('metronome', value)}
+              peaks={metronomeWaveform}
+              duration={duration}
+              playing={playing}
+              getPosition={getPosition}
+              onSeek={seekTo}
+              disabled={decoding || !!decodeError}
+            />
           </div>
         </div>
       </div>

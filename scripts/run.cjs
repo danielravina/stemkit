@@ -73,7 +73,9 @@ function findNode(requiredMajor) {
 }
 
 const STEPS = {
-  'test:audio': [['node', '--experimental-strip-types', '--test', 'tests/engine.test.mjs', 'tests/pan-storage.test.mjs']],
+  'test:practice': [['electron-vite', 'build'], ['electron', 'tests/practice-audio.electron.cjs']],
+  'test:count-in': [['electron-vite', 'build'], ['electron', 'tests/count-in.electron.cjs']],
+  'test:audio': [['node', '--experimental-strip-types', '--test', 'tests/engine.test.mjs', 'tests/metronome-wav.test.mjs', 'tests/metronome-export.test.mjs', 'tests/pan-storage.test.mjs', 'tests/count-in-settings.test.mjs', 'tests/tempo-client.test.mjs', 'tests/tempo-analysis.test.mjs', 'tests/import-tempo.test.mjs']],
   dev: [['electron-vite', 'dev']],
   build: [['electron-vite', 'build']],
   typecheck: [
