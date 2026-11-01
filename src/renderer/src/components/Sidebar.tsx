@@ -12,6 +12,7 @@ interface Props {
   onSelect: (videoId: string) => void
   onDelete: (videoId: string) => void
   onAdd: () => void
+  onClearAll: () => void
   onInstallUpdate: () => void
   onOpenSettings: () => void
 }
@@ -25,6 +26,7 @@ export function Sidebar({
   onSelect,
   onDelete,
   onAdd,
+  onClearAll,
   onInstallUpdate,
   onOpenSettings
 }: Props): React.ReactElement {
@@ -46,13 +48,24 @@ export function Sidebar({
         <span className="text-[11px] font-semibold uppercase tracking-widest text-white/30">
           Library
         </span>
-        <button
-          onClick={onAdd}
-          title="Add song"
-          className="no-drag w-6 h-6 rounded-md bg-white/5 hover:bg-white/10 text-white/50 hover:text-white flex items-center justify-center transition-colors"
-        >
-          <PlusIcon className="w-3.5 h-3.5" />
-        </button>
+        <span className="flex items-center gap-1">
+          {songs.length > 0 && (
+            <button
+              onClick={onClearAll}
+              title="Remove every song and its stems"
+              className="no-drag w-6 h-6 rounded-md bg-white/5 hover:bg-white/10 text-white/40 hover:text-rose-300 flex items-center justify-center transition-colors"
+            >
+              <TrashIcon className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            onClick={onAdd}
+            title="Add song"
+            className="no-drag w-6 h-6 rounded-md bg-white/5 hover:bg-white/10 text-white/50 hover:text-white flex items-center justify-center transition-colors"
+          >
+            <PlusIcon className="w-3.5 h-3.5" />
+          </button>
+        </span>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-0.5">

@@ -1,4 +1,5 @@
 const { chmodSync, renameSync, writeFileSync, existsSync } = require('fs')
+const { spawnSync } = require('child_process')
 const { join } = require('path')
 
 /* Chromium boots its zygote before any app JS runs, so `no-sandbox` must be
@@ -30,6 +31,21 @@ exec "$BIN" "$@"
 }
 
 exports.default = async function afterPack(context) {
+  if (context.electronPlatformName === 'darwin') {
+    /* Rosetta refuses to run unsigned x86_64 code, so a local test build still
+       needs a signature even without a Developer ID. electron-builder has no
+       adhoc mode, so sign here and run the build with
+       CSC_IDENTITY_AUTO_DISCOVERY=false to keep it out of the way. Off by
+       default: real releases are signed by electron-builder after this hook. */
+    if (process.env.STEMKIT_ADHOC_SIGN !== '1') return
+    const app = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
+    const r = spawnSync('codesign', ['--force', '--deep', '--sign', '-', app], {
+      stdio: 'inherit'
+    })
+    if (r.status !== 0) process.exit(r.status ?? 1)
+    return
+  }
+
   if (context.electronPlatformName !== 'linux') return
 
   const dir = context.appOutDir
