@@ -45,6 +45,7 @@ export class StemEngine {
   private playing = false
   private anchorYt = 0
   private anchorCtx = 0
+  private loop: { start: number; end: number } | null = null
   rate = 1
 
   private ensureCtx(): AudioContext {
@@ -107,8 +108,16 @@ export class StemEngine {
     this.align(time)
   }
 
+  // A-B loop: sources wrap natively (sample-accurate, stems stay locked)
+  setLoop(loop: { start: number; end: number } | null): void {
+    const pos = this.expected()
+    this.loop = loop
+    if (this.playing) this.align(pos)
+  }
+
   align(time: number): void {
     this.stopSources()
+    if (this.loop && (time < this.loop.start || time >= this.loop.end)) time = this.loop.start
     this.anchorYt = time
     if (!this.ctx || !this.playing || !this.hasBuffers()) return
     const ctx = this.ctx
@@ -120,6 +129,11 @@ export class StemEngine {
       const src = ctx.createBufferSource()
       src.buffer = buf
       src.playbackRate.value = this.rate
+      if (this.loop) {
+        src.loop = true
+        src.loopStart = this.loop.start
+        src.loopEnd = this.loop.end
+      }
       src.connect(gain)
       src.start(startAt, Math.min(Math.max(0, time), Math.max(0, buf.duration - 0.01)))
       this.sources.push(src)
@@ -129,7 +143,10 @@ export class StemEngine {
 
   expected(): number {
     if (!this.ctx || !this.playing) return this.anchorYt
-    return this.anchorYt + (this.ctx.currentTime - this.anchorCtx) * this.rate
+    const t = this.anchorYt + (this.ctx.currentTime - this.anchorCtx) * this.rate
+    if (!this.loop || t < this.loop.end) return t
+    const { start, end } = this.loop
+    return start + ((t - start) % (end - start))
   }
 
   trackDuration(): number {

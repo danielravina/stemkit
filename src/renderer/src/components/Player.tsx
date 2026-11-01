@@ -11,6 +11,7 @@ import { DownloadIcon } from './Icons'
 
 // number keys 1-6 mute the lane shown in that position, top to bottom
 const STEM_KEYS = ['1', '2', '3', '4', '5', '6']
+const MIN_LOOP = 0.25
 
 type BufferCacheMap = BufferMap
 
@@ -88,6 +89,8 @@ export function Player({ song, settings }: Props): React.ReactElement {
   const [solos, setSolos] = useState<Set<StemId>>(new Set())
   const [master, setMaster] = useState(0.9)
   const [preset, setPreset] = useState<PresetId | 'custom'>('all')
+  const [loopA, setLoopA] = useState<number | null>(null)
+  const [loopB, setLoopB] = useState<number | null>(null)
 
   const stemMeta = useMemo(() => buildStemMeta(Object.keys(buffers) as StemId[]), [buffers])
 
@@ -121,6 +124,8 @@ export function Player({ song, settings }: Props): React.ReactElement {
     setMutes(new Set())
     setSolos(new Set())
     setPreset('all')
+    setLoopA(null)
+    setLoopB(null)
     engine.stopAll()
 
     let cancelled = false
@@ -212,6 +217,11 @@ export function Player({ song, settings }: Props): React.ReactElement {
     engine.applyMix(vols, mutes, solos, master, pans)
   }, [vols, mutes, solos, master, pans])
 
+  useEffect(() => {
+    engine.setLoop(loopA !== null && loopB !== null ? { start: loopA, end: loopB } : null)
+    setBump((n) => n + 1)
+  }, [loopA, loopB])
+
   const changePan = (id: StemId, value: number): void => {
     const next = { ...pansRef.current, [id]: value }
     pansRef.current = next
@@ -239,7 +249,13 @@ export function Player({ song, settings }: Props): React.ReactElement {
     if (!playing) return
     let raf = 0
     const tick = (): void => {
+      const prev = posRef.current
       posRef.current = engine.expected()
+      // jumped back (loop wrapped to A): bring the video along right away
+      if (posRef.current < prev - 0.1) {
+        videoSyncAtRef.current = performance.now()
+        hostRef.current?.seek(posRef.current)
+      }
 
       const dur = engine.trackDuration()
       if (dur > 0 && posRef.current >= dur - 0.03) {
@@ -310,6 +326,25 @@ export function Player({ song, settings }: Props): React.ReactElement {
     },
     [duration]
   )
+
+  // A sets the loop start; B closes the loop (from the start of the song if no A yet)
+  const markLoop = (point: 'a' | 'b'): void => {
+    const t = Math.min(posRef.current, Math.max(0, duration - 0.1))
+    if (point === 'a') {
+      setLoopA(t)
+      if (loopB !== null && loopB - t < MIN_LOOP) setLoopB(null)
+    } else {
+      const a = loopA ?? 0
+      if (t - a < MIN_LOOP) return
+      setLoopA(a)
+      setLoopB(t)
+    }
+  }
+
+  const clearLoop = (): void => {
+    setLoopA(null)
+    setLoopB(null)
+  }
 
   const getPosition = useCallback((): number => {
     void bump
@@ -496,6 +531,10 @@ export function Player({ song, settings }: Props): React.ReactElement {
             master={master}
             onMaster={setMaster}
             youtubeUrl={youtubeUrl ?? undefined}
+            loopA={loopA}
+            loopB={loopB}
+            onLoopMark={markLoop}
+            onLoopClear={clearLoop}
           />
 
           {panError && <p role="status" className="mt-3 text-xs text-amber-300">{panError}</p>}

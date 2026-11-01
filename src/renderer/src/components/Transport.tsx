@@ -23,18 +23,26 @@ interface Props {
   onMaster: (v: number) => void
   // local-file songs have no video to link out to
   youtubeUrl?: string
+  loopA: number | null
+  loopB: number | null
+  onLoopMark: (point: 'a' | 'b') => void
+  onLoopClear: () => void
 }
 
 function SeekBar({
   duration,
   getPosition,
   onSeek,
-  playing
+  playing,
+  loopA,
+  loopB
 }: {
   duration: number
   getPosition: () => number
   onSeek: (seconds: number) => void
   playing: boolean
+  loopA: number | null
+  loopB: number | null
 }): React.ReactElement {
   const barRef = useRef<HTMLDivElement>(null)
   const [, force] = useState(0)
@@ -75,6 +83,15 @@ function SeekBar({
         }}
         className="no-drag relative flex-1 h-4 flex items-center cursor-pointer group"
       >
+        {duration > 0 && loopA !== null && (
+          <div
+            className="absolute h-3 rounded-sm bg-amber-300/25 border-x-2 border-amber-300 pointer-events-none"
+            style={{
+              left: `${(loopA / duration) * 100}%`,
+              width: loopB !== null ? `${((loopB - loopA) / duration) * 100}%` : 0
+            }}
+          />
+        )}
         <div className="w-full h-1 rounded-full bg-white/10 overflow-hidden">
           <div
             className="h-full rounded-full bg-gradient-to-r from-violet-400 to-emerald-400"
@@ -155,7 +172,11 @@ export function Transport({
   onPreset,
   master,
   onMaster,
-  youtubeUrl
+  youtubeUrl,
+  loopA,
+  loopB,
+  onLoopMark,
+  onLoopClear
 }: Props): React.ReactElement {
   // onSeek clamps to the track bounds, so no need to guard here
   const skip = (seconds: number): void => onSeek(getPosition() + seconds)
@@ -163,7 +184,14 @@ export function Transport({
 
   return (
     <div className="glass rounded-2xl px-5 py-4 mt-4 flex flex-col gap-4">
-      <SeekBar duration={duration} getPosition={getPosition} onSeek={onSeek} playing={playing} />
+      <SeekBar
+        duration={duration}
+        getPosition={getPosition}
+        onSeek={onSeek}
+        playing={playing}
+        loopA={loopA}
+        loopB={loopB}
+      />
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
@@ -180,6 +208,33 @@ export function Transport({
             )}
           </button>
           <SkipButton direction={1} shiftHeld={shiftHeld} disabled={duration === 0} onSkip={skip} />
+          <div className="no-drag flex items-center gap-1 ml-2 bg-white/5 rounded-full p-1">
+            {(['a', 'b'] as const).map((point) => {
+              const value = point === 'a' ? loopA : loopB
+              return (
+                <button
+                  key={point}
+                  onClick={() => onLoopMark(point)}
+                  disabled={duration === 0}
+                  title={`Set loop ${point.toUpperCase()} at the playhead${value !== null ? ` (now ${fmtTime(value)})` : ''}`}
+                  className={`w-8 h-7 rounded-full text-[12px] font-semibold transition-colors disabled:opacity-40 ${
+                    value !== null ? 'bg-amber-300 text-black' : 'text-white/60 hover:text-white'
+                  }`}
+                >
+                  {point.toUpperCase()}
+                </button>
+              )
+            })}
+            {(loopA !== null || loopB !== null) && (
+              <button
+                onClick={onLoopClear}
+                title="Clear loop"
+                className="w-7 h-7 rounded-full text-white/60 hover:text-white text-sm"
+              >
+                ×
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="no-drag flex items-center gap-1 bg-white/5 rounded-full p-1">
