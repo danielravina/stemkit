@@ -7,7 +7,7 @@ import { SongThumb } from '../lib/thumbs'
 import { YouTubeHost, type YTState } from '../lib/youtube'
 import { StemLane } from './StemLane'
 import { Transport, type PresetId } from './Transport'
-import { DownloadIcon } from './Icons'
+import { DownloadIcon, ExpandIcon, FullscreenIcon } from './Icons'
 
 // number keys 1-6 mute the lane shown in that position, top to bottom
 const STEM_KEYS = ['1', '2', '3', '4', '5', '6']
@@ -60,6 +60,8 @@ interface Props {
 
 export function Player({ song, settings }: Props): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null)
+  const videoBoxRef = useRef<HTMLDivElement>(null)
+  const [bigVideo, setBigVideo] = useState(false)
   const hostRef = useRef<YouTubeHost | null>(null)
   const posRef = useRef(0)
   const playingRef = useRef(false)
@@ -299,6 +301,11 @@ export function Player({ song, settings }: Props): React.ReactElement {
     }
   }, [decoding, decodeError, showVideo])
 
+  const toggleFullscreen = useCallback((): void => {
+    if (document.fullscreenElement) void document.exitFullscreen()
+    else void videoBoxRef.current?.requestFullscreen()
+  }, [])
+
   const seekTo = useCallback(
     (t: number): void => {
       const clamped = Math.max(0, Math.min(duration > 0 ? duration - 0.05 : t, t))
@@ -376,11 +383,13 @@ export function Player({ song, settings }: Props): React.ReactElement {
         e.preventDefault()
         const step = e.shiftKey ? 15 : 5
         seekTo(posRef.current + (e.code === 'ArrowLeft' ? -step : step))
+      } else if (e.code === 'KeyF' && showVideo && !e.altKey && !e.ctrlKey && !e.metaKey) {
+        toggleFullscreen()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePlay, toggleMute, stemMeta, seekTo, decoding, decodeError])
+  }, [togglePlay, toggleMute, stemMeta, seekTo, decoding, decodeError, showVideo, toggleFullscreen])
 
   const toggleSolo = (id: StemId): void => {
     setPreset('custom')
@@ -408,12 +417,31 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
       <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-6">
         <div className="max-w-6xl mx-auto">
-          <div className="flex items-stretch gap-4 h-[220px]">
+          <div className={bigVideo && showVideo ? 'flex flex-col gap-4' : 'flex items-stretch gap-4 h-[220px]'}>
             {showVideo && (
-              <div className="relative w-[391px] shrink-0">
+              <div className={bigVideo ? 'relative w-full aspect-video max-h-[65vh]' : 'relative w-[391px] shrink-0'}>
                 <div className="absolute -inset-4 bg-violet-500/10 blur-3xl rounded-full pointer-events-none" />
-                <div className="absolute inset-0 rounded-xl overflow-hidden ring-1 ring-white/10 bg-black shadow-2xl shadow-black/60">
+                <div
+                  ref={videoBoxRef}
+                  className="group absolute inset-0 rounded-xl [&:fullscreen]:rounded-none overflow-hidden ring-1 ring-white/10 bg-black shadow-2xl shadow-black/60"
+                >
                   <div ref={containerRef} className="absolute inset-0 [&_iframe]:w-full [&_iframe]:h-full" />
+                  <div className="no-drag absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => setBigVideo((v) => !v)}
+                      title={bigVideo ? 'Smaller video' : 'Bigger video'}
+                      className="w-8 h-8 rounded-lg bg-black/60 text-white/80 hover:text-white flex items-center justify-center"
+                    >
+                      <ExpandIcon className={`w-4 h-4 ${bigVideo ? '-scale-x-100' : ''}`} />
+                    </button>
+                    <button
+                      onClick={toggleFullscreen}
+                      title="Full screen (F)"
+                      className="w-8 h-8 rounded-lg bg-black/60 text-white/80 hover:text-white flex items-center justify-center"
+                    >
+                      <FullscreenIcon className="w-4 h-4" />
+                    </button>
+                  </div>
                   {!ytReady && (
                     <div className="absolute inset-0 flex items-center justify-center animate-pulse">
                       <span className="text-[10px] text-white/40 tracking-widest uppercase">loading…</span>
@@ -430,7 +458,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
               </div>
             )}
 
-            <aside className="flex-1 min-w-0 glass rounded-2xl px-6 py-5 rise-in flex flex-col justify-between">
+            <aside className="flex-1 min-w-0 glass rounded-2xl px-6 py-5 rise-in flex flex-col justify-between gap-4">
               <div className="flex items-center gap-4">
                 <SongThumb
                   videoId={song.videoId}
