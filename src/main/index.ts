@@ -9,6 +9,7 @@ import {
 } from 'electron'
 import { join, normalize, extname } from 'path'
 import { existsSync, copyFileSync, createReadStream, statSync } from 'fs'
+import { spawn } from 'child_process'
 import { createServer, type Server } from 'http'
 import type { AddressInfo } from 'net'
 import type { AppSettings } from '../shared/types'
@@ -255,7 +256,7 @@ app.whenReady().then(async () => {
       const proc = spawn(py, [script, '--input', audioPath, '--out', outPath, '--click-out', clickWav], {
         env: { ...process.env }
       })
-      proc.on('close', (code) => {
+      proc.on('close', (code: number | null) => {
         if (code === 0) resolve()
         else reject(new Error('detect_beats failed with code ' + code))
       })
