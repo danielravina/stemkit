@@ -1,4 +1,4 @@
-export type StemId = 'vocals' | 'drums' | 'bass' | 'other' | 'piano' | 'guitar'
+export type StemId = 'vocals' | 'drums' | 'bass' | 'other' | 'piano' | 'guitar' | 'click'
 export type StemPanMap = Partial<Record<StemId, number>>
 
 // which GPU vendor GPU acceleration targets: NVIDIA via CUDA torch (windows
@@ -21,6 +21,27 @@ export interface Song {
   took?: number
   // local audio files carry their own mix; absent means a YouTube source
   source?: 'local'
+  bpm?: number
+  meter?: number
+  firstBeatOffset?: number
+}
+
+export interface BeatGridItem {
+  index: number
+  time: number
+  is_downbeat: boolean
+}
+
+export interface BeatGridData {
+  bpm: number
+  meter: number
+  firstBeatOffset: number
+  totalBeats: number
+  totalBars: number
+  beats: number[]
+  downbeats: number[]
+  grid: BeatGridItem[]
+  tookSec?: number
 }
 
 export interface AppSettings {
@@ -131,6 +152,8 @@ export interface StemKitApi {
   getBuffers(videoId: string): Promise<Record<string, Uint8Array>>
   getStemPan(videoId: string): Promise<StemPanMap>
   setStemPan(videoId: string, pans: StemPanMap): Promise<void>
+  getBeatGrid(videoId: string): Promise<BeatGridData | null>
+  detectBeatGrid(videoId: string): Promise<BeatGridData>
   exportStem(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>
   exportAllStems(videoId: string): Promise<{ saved: boolean; path?: string; count?: number }>
   searchYouTube(query: string): Promise<SearchResult[]>

@@ -11,6 +11,16 @@ const PRESETS: { id: PresetId; label: string }[] = [
   { id: 'drumnbass', label: 'Drums + Bass' }
 ]
 
+function MetronomeIcon({ className }: { className?: string }): React.ReactElement {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 2 4 22h16L12 2Z" />
+      <path d="m12 6 5 10" />
+      <circle cx="15.5" cy="13.5" r="1.5" fill="currentColor" />
+    </svg>
+  )
+}
+
 interface Props {
   playing: boolean
   duration: number
@@ -23,18 +33,38 @@ interface Props {
   onMaster: (v: number) => void
   // local-file songs have no video to link out to
   youtubeUrl?: string
+  loopA: number | null
+  loopB: number | null
+  isLoopActive: boolean
+  onSetPointA: () => void
+  onSetPointB: () => void
+  onToggleLoop: () => void
+  onClearLoop: () => void
+  // Metronome props
+  metronomeOn: boolean
+  onToggleMetronome: () => void
+  bpm?: number
+  meter?: number
+  detectingBpm?: boolean
+  onDetectBpm?: () => void
 }
 
 function SeekBar({
   duration,
   getPosition,
   onSeek,
-  playing
+  playing,
+  loopA,
+  loopB,
+  isLoopActive
 }: {
   duration: number
   getPosition: () => number
   onSeek: (seconds: number) => void
   playing: boolean
+  loopA: number | null
+  loopB: number | null
+  isLoopActive: boolean
 }): React.ReactElement {
   const barRef = useRef<HTMLDivElement>(null)
   const [, force] = useState(0)
@@ -73,16 +103,73 @@ function SeekBar({
         onPointerMove={(e) => {
           if (e.buttons === 1) seekFromEvent(e.clientX)
         }}
-        className="no-drag relative flex-1 h-4 flex items-center cursor-pointer group"
+        className="no-drag relative flex-1 h-6 flex items-center cursor-pointer group"
       >
-        <div className="w-full h-1 rounded-full bg-white/10 overflow-hidden">
+        <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden relative">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-violet-400 to-emerald-400"
+            className="h-full rounded-full bg-linear-to-r from-violet-400 to-emerald-400"
             style={{ width: `${frac * 100}%` }}
           />
         </div>
+
+        {/* Highlighted A-B Loop Region */}
+        {loopA !== null && loopB !== null && duration > 0 && (
+          <div
+            className={`absolute h-2 -top-px rounded pointer-events-none transition-colors ${
+              isLoopActive
+                ? 'bg-emerald-400/30 border-x-2 border-emerald-400 shadow-sm shadow-emerald-500/20'
+                : 'bg-white/15 border-x border-white/30'
+            }`}
+            style={{
+              left: `${(Math.min(loopA, loopB) / duration) * 100}%`,
+              width: `${(Math.abs(loopB - loopA) / duration) * 100}%`
+            }}
+          />
+        )}
+
+        {/* Marker A Pin */}
+        {loopA !== null && duration > 0 && (
+          <div
+            className={`absolute -top-3.5 pointer-events-none flex flex-col items-center z-10 transition-transform ${
+              loopB !== null && Math.abs(loopB - loopA) / duration < 0.05
+                ? loopA <= loopB
+                  ? '-translate-x-[calc(100%+1px)] items-end'
+                  : 'translate-x-px items-start'
+                : '-translate-x-1/2 items-center'
+            }`}
+            style={{ left: `${(loopA / duration) * 100}%` }}
+            title={`Point A: ${fmtTime(loopA)}`}
+          >
+            <span className="text-[9px] font-bold font-mono px-1 rounded-sm bg-emerald-400 text-black leading-none py-0.5 shadow">
+              A
+            </span>
+            <div className="w-0.5 h-1.5 bg-emerald-400 -mt-px mr-0.5" />
+          </div>
+        )}
+
+        {/* Marker B Pin */}
+        {loopB !== null && duration > 0 && (
+          <div
+            className={`absolute -top-3.5 pointer-events-none flex flex-col items-center z-10 transition-transform ${
+              loopA !== null && Math.abs(loopB - loopA) / duration < 0.05
+                ? loopB >= loopA
+                  ? 'translate-x-px items-start'
+                  : '-translate-x-[calc(100%+1px)] items-end'
+                : '-translate-x-1/2 items-center'
+            }`}
+            style={{ left: `${(loopB / duration) * 100}%` }}
+            title={`Point B: ${fmtTime(loopB)}`}
+          >
+            <span className="text-[9px] font-bold font-mono px-1 rounded-sm bg-emerald-400 text-black leading-none py-0.5 shadow">
+              B
+            </span>
+            <div className="w-0.5 h-1.5 bg-emerald-400 -mt-px ml-0.5" />
+          </div>
+        )}
+
+        {/* Playhead thumb */}
         <div
-          className="absolute w-3 h-3 rounded-full bg-white shadow transition-transform group-hover:scale-125"
+          className="absolute w-3 h-3 rounded-full bg-white shadow transition-transform group-hover:scale-125 z-20"
           style={{ left: `calc(${frac * 100}% - 6px)` }}
         />
       </div>
@@ -155,17 +242,37 @@ export function Transport({
   onPreset,
   master,
   onMaster,
-  youtubeUrl
+  youtubeUrl,
+  loopA,
+  loopB,
+  isLoopActive,
+  onSetPointA,
+  onSetPointB,
+  onToggleLoop,
+  onClearLoop,
+  metronomeOn,
+  onToggleMetronome,
+  bpm,
+  meter,
+  detectingBpm,
+  onDetectBpm
 }: Props): React.ReactElement {
-  // onSeek clamps to the track bounds, so no need to guard here
   const skip = (seconds: number): void => onSeek(getPosition() + seconds)
   const shiftHeld = useShiftHeld()
 
   return (
     <div className="glass rounded-2xl px-5 py-4 mt-4 flex flex-col gap-4">
-      <SeekBar duration={duration} getPosition={getPosition} onSeek={onSeek} playing={playing} />
+      <SeekBar
+        duration={duration}
+        getPosition={getPosition}
+        onSeek={onSeek}
+        playing={playing}
+        loopA={loopA}
+        loopB={loopB}
+        isLoopActive={isLoopActive}
+      />
 
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-1.5">
           <SkipButton direction={-1} shiftHeld={shiftHeld} disabled={duration === 0} onSkip={skip} />
           <button
@@ -180,6 +287,111 @@ export function Transport({
             )}
           </button>
           <SkipButton direction={1} shiftHeld={shiftHeld} disabled={duration === 0} onSkip={skip} />
+        </div>
+
+        {/* A-B Looping Controls */}
+        <div className="no-drag flex items-center gap-1 bg-white/5 border border-white/5 rounded-full p-1">
+          <button
+            onClick={onSetPointA}
+            disabled={duration === 0}
+            title={loopA !== null ? `Point A: ${fmtTime(loopA)} (Click to reset/move, shortcut: [ or I)` : 'Set Point A at current position (shortcut: [ or I)'}
+            className={`px-3 py-1 rounded-full text-xs font-mono font-medium transition-all ${
+              loopA !== null
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                : 'text-white/60 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            {loopA !== null ? `A: ${fmtTime(loopA)}` : 'Set A'}
+          </button>
+
+          <button
+            onClick={onSetPointB}
+            disabled={duration === 0}
+            title={loopB !== null ? `Point B: ${fmtTime(loopB)} (Click to move, shortcut: ] or O)` : 'Set Point B at current position (shortcut: ] or O)'}
+            className={`px-3 py-1 rounded-full text-xs font-mono font-medium transition-all ${
+              loopB !== null
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm'
+                : 'text-white/60 hover:text-white hover:bg-white/10'
+            }`}
+          >
+            {loopB !== null ? `B: ${fmtTime(loopB)}` : 'Set B'}
+          </button>
+
+          <button
+            onClick={onToggleLoop}
+            disabled={loopA === null || loopB === null}
+            title={
+              loopA === null || loopB === null
+                ? 'Set points A and B to enable loop'
+                : isLoopActive
+                  ? 'Disable A-B Loop (shortcut: L or \\)'
+                  : 'Enable A-B Loop (shortcut: L or \\)'
+            }
+            className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all ${
+              isLoopActive
+                ? 'bg-emerald-400 text-black font-semibold shadow-md shadow-emerald-500/30'
+                : 'text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent'
+            }`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+              <path d="m17 2 4 4-4 4" />
+              <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+              <path d="m7 22-4-4 4-4" />
+              <path d="M21 13v1a4 4 0 0 1-4 4H3" />
+            </svg>
+            <span>Loop</span>
+          </button>
+
+          {(loopA !== null || loopB !== null) && (
+            <button
+              onClick={onClearLoop}
+              title="Clear A-B Loop points (shortcut: Esc or C)"
+              className="w-6 h-6 rounded-full flex items-center justify-center text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="w-3.5 h-3.5">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+
+        {/* Metronome / BPM Controls */}
+        <div className="no-drag flex items-center gap-1.5 bg-white/5 border border-white/5 rounded-full p-1">
+          <button
+            onClick={onToggleMetronome}
+            disabled={!bpm && !detectingBpm}
+            title={metronomeOn ? 'Turn Metronome Off (M)' : 'Turn Metronome On (M)'}
+            className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1.5 transition-all ${
+              metronomeOn
+                ? 'bg-amber-400 text-black font-semibold shadow-md shadow-amber-500/30'
+                : 'text-white/60 hover:text-white hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent'
+            }`}
+          >
+            <MetronomeIcon className="w-3.5 h-3.5" />
+            <span>Click</span>
+          </button>
+
+
+
+          {detectingBpm ? (
+            <span className="text-[11px] font-mono text-amber-300 animate-pulse px-2">
+              Detecting…
+            </span>
+          ) : bpm ? (
+            <span
+              className="text-xs font-mono font-medium text-white/90 px-2 py-0.5 rounded-full bg-white/5"
+              title={`Meter: ${meter ?? 4}/4`}
+            >
+              {bpm} BPM
+            </span>
+          ) : onDetectBpm ? (
+            <button
+              onClick={onDetectBpm}
+              className="text-[11px] font-medium text-white/50 hover:text-white hover:bg-white/10 px-2 py-1 rounded-full transition-colors"
+            >
+              Detect BPM
+            </button>
+          ) : null}
         </div>
 
         <div className="no-drag flex items-center gap-1 bg-white/5 rounded-full p-1">

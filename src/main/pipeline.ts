@@ -466,6 +466,8 @@ async function runSeparation(
             const mapped = Math.max(lastPct, mapPct(pct, message))
             lastPct = mapped
             progress(job, 'separate', mapped, message)
+          } else if (parsed.type === 'stem' && typeof parsed.name === 'string') {
+            progress(job, 'separate', lastPct, `Saved ${parsed.name} stem`)
           } else if (parsed.type === 'error') {
             scriptError = `Separation failed: ${String(parsed.message)}`
           } else if (parsed.type === 'done' && Array.isArray(parsed.stems)) {
@@ -625,8 +627,8 @@ async function runSeparation(
 
     return producedStems
   } finally {
-      release()
-    }
+    release()
+  }
 }
 
 /* macOS errno -86 (EBADARCH, "Bad CPU type in executable"): a spawned tool
@@ -742,7 +744,7 @@ export async function searchYouTube(query: string): Promise<
     const timer = setTimeout(() => {
       try {
         child.kill('SIGKILL')
-      } catch {}
+      } catch { }
       reject(new Error('Search timed out'))
     }, 30000)
     child.on('error', (e) => {
@@ -783,11 +785,11 @@ function killTree(proc: ChildProcess): void {
   if (process.platform === 'win32') {
     try {
       spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'])
-    } catch {}
+    } catch { }
   } else {
     try {
       proc.kill('SIGKILL')
-    } catch {}
+    } catch { }
   }
 }
 

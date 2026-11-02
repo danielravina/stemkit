@@ -124,7 +124,7 @@ export function Processing({
                 </span>
                 <div className="flex-1 h-1 rounded-full bg-white/10 overflow-hidden">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-violet-400 to-emerald-400 transition-[width] duration-300"
+                    className="h-full rounded-full bg-linear-to-r from-violet-400 to-emerald-400 transition-[width] duration-300"
                     style={{ width: `${pct}%` }}
                   />
                 </div>
@@ -136,13 +136,17 @@ export function Processing({
         {timing && !error && (
           <p className="mt-4 text-center text-[11px] font-mono text-white/35">
             elapsed {fmtTime(timing.elapsed)}
-            {timing.left !== null ? ` · ~${fmtTime(timing.left)} left` : ' · estimating…'}
+            {timing.left !== null
+              ? timing.left > 3
+                ? ` · ~${fmtTime(timing.left)} left`
+                : ' · finishing…'
+              : ' · estimating…'}
           </p>
         )}
 
         {error && (
           <div className="mt-6 rise-in">
-            <div className="rounded-xl bg-rose-500/10 border border-rose-400/20 px-4 py-3 text-[13px] text-rose-200 break-words">
+            <div className="rounded-xl bg-rose-500/10 border border-rose-400/20 px-4 py-3 text-[13px] text-rose-200 wrap-break-word">
               {error}
             </div>
             <div className="mt-4 flex gap-2 justify-end">

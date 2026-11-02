@@ -121,6 +121,13 @@ export function roformerScript(): string {
   return join(app.getAppPath(), 'python', 'roformer.py')
 }
 
+export function detectBeatsScript(): string {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, 'python', 'detect_beats.py')
+  }
+  return join(app.getAppPath(), 'python', 'detect_beats.py')
+}
+
 export function modelsDir(): string {
   return join(userDataDir(), 'models')
 }
@@ -618,7 +625,7 @@ function downloadTo(
       const resumed = res.statusCode === 206 && base > 0
       const start = resumed ? base : 0
       const total = start + Number(res.headers['content-length'] ?? 0)
-      const out = createWriteStream(part, { flags: resumed ? 'append' : 'w' })
+      const out = createWriteStream(part, { flags: resumed ? 'a' : 'w' })
       let done = 0
       // downloads surfaced in the UI (with an onProgress observer) report
       // finer-grained progress than the plain setup-log ones

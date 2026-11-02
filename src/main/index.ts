@@ -9,6 +9,7 @@ import {
 } from 'electron'
 import { join, normalize, extname } from 'path'
 import { existsSync, copyFileSync, createReadStream, statSync } from 'fs'
+import { spawn } from 'child_process'
 import { createServer, type Server } from 'http'
 import type { AddressInfo } from 'net'
 import type { AppSettings } from '../shared/types'
@@ -26,12 +27,14 @@ import {
   hasGpuAcceleration,
   gpuAccelerationInfo,
   engineStatus,
-  getStatus
+  getStatus,
+  venvPython,
+  detectBeatsScript
 } from './env'
 import { loadSettings, saveSettings } from './settings'
 import {
   loadSongs, removeSong, clearLibrary, stemBuffers, stemsDir, stemsFor, sanitizeName,
-  exportStems, transcodeToAac, loadStemPan, saveStemPan
+  exportStems, transcodeToAac, mixWavPath, loadStemPan, saveStemPan, loadBeatGrid, gridJsonPath
 } from './library'
 import { AUDIO_EXTENSIONS } from '../shared/local'
 import { startJob, startLocalJob, cancelJob, searchYouTube } from './pipeline'
@@ -234,6 +237,36 @@ app.whenReady().then(async () => {
   ipcMain.handle('library:list', () => loadSongs())
   ipcMain.handle('song:pan:get', (_e, videoId: string) => loadStemPan(videoId))
   ipcMain.handle('song:pan:set', (_e, videoId: string, pans: unknown) => saveStemPan(videoId, pans))
+  ipcMain.handle('song:grid:get', (_e, videoId: string) => loadBeatGrid(videoId))
+  ipcMain.handle('song:grid:detect', async (_e, videoId: string) => {
+    const existing = loadBeatGrid(videoId)
+    const clickWav = join(stemsDir(videoId), 'click.wav')
+    if (existing && existsSync(clickWav)) return existing
+
+    const drums = join(stemsDir(videoId), 'drums.wav')
+    const mix = mixWavPath(videoId)
+    const audioPath = existsSync(drums) ? drums : (existsSync(mix) ? mix : null)
+    if (!audioPath) throw new Error('No audio found to analyze')
+
+    const outPath = gridJsonPath(videoId)
+    const py = venvPython()
+    const script = detectBeatsScript()
+
+    await new Promise<void>((resolve, reject) => {
+      const proc = spawn(py, [script, '--input', audioPath, '--out', outPath, '--click-out', clickWav], {
+        env: { ...process.env }
+      })
+      proc.on('close', (code: number | null) => {
+        if (code === 0) resolve()
+        else reject(new Error('detect_beats failed with code ' + code))
+      })
+      proc.on('error', reject)
+    })
+
+    const grid = loadBeatGrid(videoId)
+    if (!grid) throw new Error('Failed to load generated beat grid')
+    return grid
+  })
   ipcMain.handle('library:delete', (_e, videoId: string) => removeSong(videoId))
   ipcMain.handle('library:clear', () => {
     // cancel first: a running job would keep writing into the folder we are

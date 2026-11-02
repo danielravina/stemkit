@@ -1,5 +1,5 @@
 import type { StemId } from '../../../shared/types'
-import { MicIcon, DrumIcon, BassIcon, WaveIcon, PianoIcon, GuitarIcon } from '../components/Icons'
+import { MicIcon, DrumIcon, BassIcon, WaveIcon, PianoIcon, GuitarIcon, MetronomeIcon } from '../components/Icons'
 
 export interface StemMeta {
   id: StemId
@@ -9,6 +9,7 @@ export interface StemMeta {
 }
 
 const ALL_META: Record<StemId, StemMeta> = {
+  click: { id: 'click', label: 'click', color: '#F59E0B', icon: <MetronomeIcon /> },
   vocals: { id: 'vocals', label: 'vocals', color: '#A78BFA', icon: <MicIcon /> },
   drums: { id: 'drums', label: 'drums', color: '#F87171', icon: <DrumIcon /> },
   bass: { id: 'bass', label: 'bass', color: '#60A5FA', icon: <BassIcon /> },
@@ -17,10 +18,14 @@ const ALL_META: Record<StemId, StemMeta> = {
   other: { id: 'other', label: 'other', color: '#34D399', icon: <WaveIcon /> }
 }
 
-const PREFERRED_ORDER: StemId[] = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
+// Instruments separated by Demucs from the source audio
+export const SEPARABLE_STEMS: StemId[] = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
 
-export { ALL_META as STEM_INFO, PREFERRED_ORDER }
+// Order of lanes rendered in the player (Click at the very top)
+export const PLAYER_STEM_ORDER: StemId[] = ['click', 'vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
+
+export { ALL_META as STEM_INFO, PLAYER_STEM_ORDER as PREFERRED_ORDER }
 
 export function buildStemMeta(available: StemId[]): StemMeta[] {
-  return PREFERRED_ORDER.filter((id) => available.includes(id)).map((id) => ALL_META[id])
+  return PLAYER_STEM_ORDER.filter((id) => available.includes(id)).map((id) => ALL_META[id])
 }

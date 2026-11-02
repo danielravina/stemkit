@@ -9,7 +9,7 @@ import {
   type StemId
 } from '../../../shared/types'
 import { parseVideoId } from '../../../shared/url'
-import { STEM_INFO, PREFERRED_ORDER } from '../lib/stems'
+import { STEM_INFO, SEPARABLE_STEMS } from '../lib/stems'
 import { fmtTime } from '../lib/format'
 import { GearIcon, FolderIcon } from './Icons'
 
@@ -27,7 +27,7 @@ interface Props {
   onOpenSettings: () => void
 }
 
-const ALL_STEMS = PREFERRED_ORDER
+const ALL_STEMS = SEPARABLE_STEMS
 
 export function Home({
   hasSongs,

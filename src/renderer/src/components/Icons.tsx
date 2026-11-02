@@ -164,3 +164,13 @@ export function LogoMark({ className = 'w-7 h-7' }: IconProps) {
     </svg>
   )
 }
+
+export function MetronomeIcon({ className = base }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 2 4 22h16L12 2Z" />
+      <path d="m12 6 5 10" />
+      <circle cx="15.5" cy="13.5" r="1.5" fill="currentColor" />
+    </svg>
+  )
+}

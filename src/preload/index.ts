@@ -19,10 +19,14 @@ const api: StemKitApi = {
   getBuffers: (videoId) => ipcRenderer.invoke('song:buffers', videoId),
   getStemPan: (videoId) => ipcRenderer.invoke('song:pan:get', videoId),
   setStemPan: (videoId, pans) => ipcRenderer.invoke('song:pan:set', videoId, pans),
+  getBeatGrid: (videoId) => ipcRenderer.invoke('song:grid:get', videoId),
+  detectBeatGrid: (videoId) => ipcRenderer.invoke('song:grid:detect', videoId),
   exportStem: (videoId, stem) => ipcRenderer.invoke('stem:export', videoId, stem),
   exportAllStems: (videoId) => ipcRenderer.invoke('stems:export-all', videoId),
   searchYouTube: (query) => ipcRenderer.invoke('search:youtube', query),
-  startJob: (url, model, stems) => ipcRenderer.invoke('jobs:start', url, model, stems),
+  startJob(url, model, stems) {
+    return ipcRenderer.invoke('jobs:start', url, model, stems)
+  },
   pickAudioFile: () => ipcRenderer.invoke('files:pick-audio'),
   pickFolder: () => ipcRenderer.invoke('files:pick-folder'),
   // Electron 32 dropped the File.path augmentation, so a dropped file's path

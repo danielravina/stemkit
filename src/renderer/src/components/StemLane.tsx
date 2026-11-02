@@ -47,6 +47,9 @@ interface Props {
   onVolume: (v: number) => void
   onSeek: (seconds: number) => void
   onExport?: () => void
+  loopA?: number | null
+  loopB?: number | null
+  isLoopActive?: boolean
 }
 
 export function StemLane({
@@ -64,7 +67,10 @@ export function StemLane({
   onToggleSolo,
   onVolume,
   onSeek,
-  onExport
+  onExport,
+  loopA = null,
+  loopB = null,
+  isLoopActive = false
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const peaks = useMemo(() => (buffer ? computePeaks(buffer) : null), [buffer])
@@ -91,17 +97,53 @@ export function StemLane({
             duration > 0 ? Math.min(1, Math.max(0, getPosition() / duration)) : 0
           const barW = w / peaks.length
           const barInner = Math.max(1, barW * 0.62)
+
+          const hasLoop = Boolean(isLoopActive && loopA !== null && loopB !== null && duration > 0)
+          const loopStartFrac = hasLoop ? Math.min(loopA!, loopB!) / duration : 0
+          const loopEndFrac = hasLoop ? Math.max(loopA!, loopB!) / duration : 1
+
           for (let i = 0; i < peaks.length; i++) {
             const amp = Math.max(0.04, peaks[i])
             const barH = amp * (h - 8)
             const x = i * barW + (barW - barInner) / 2
             const y = (h - barH) / 2
-            const played = i / peaks.length <= frac
-            ctx.fillStyle = played ? meta.color : 'rgba(255,255,255,0.13)'
+            const barFrac = i / peaks.length
+            const inLoop = !hasLoop || (barFrac >= loopStartFrac && barFrac <= loopEndFrac)
+            const played = barFrac <= frac
+
+            if (inLoop) {
+              ctx.fillStyle = played ? meta.color : 'rgba(255,255,255,0.18)'
+            } else {
+              // Outside A-B region: dimmed opacity
+              ctx.fillStyle = played ? `${meta.color}40` : 'rgba(255,255,255,0.04)'
+            }
+
             ctx.beginPath()
             ctx.roundRect(x, y, barInner, barH, 1.5)
             ctx.fill()
           }
+
+          // If loop is active, dim outside region and draw emerald boundary lines
+          if (hasLoop) {
+            const lx1 = loopStartFrac * w
+            const lx2 = loopEndFrac * w
+
+            // Translucent dark veil over outside regions
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.45)'
+            ctx.fillRect(0, 0, lx1, h)
+            ctx.fillRect(lx2, 0, w - lx2, h)
+
+            // Top and bottom loop bounds
+            ctx.fillStyle = 'rgba(52, 211, 153, 0.25)'
+            ctx.fillRect(lx1, 0, lx2 - lx1, 1)
+            ctx.fillRect(lx1, h - 1, lx2 - lx1, 1)
+
+            // Boundaries A and B
+            ctx.fillStyle = 'rgba(52, 211, 153, 0.8)'
+            ctx.fillRect(lx1 - 0.75, 0, 1.5, h)
+            ctx.fillRect(lx2 - 0.75, 0, 1.5, h)
+          }
+
           const px = frac * w
           ctx.fillStyle = 'rgba(255,255,255,0.85)'
           ctx.fillRect(px - 0.75, 0, 1.5, h)
@@ -112,7 +154,7 @@ export function StemLane({
 
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
-  }, [peaks, duration, getPosition, meta.color])
+  }, [peaks, duration, getPosition, meta.color, loopA, loopB, isLoopActive])
 
   const handleSeek = (e: React.MouseEvent<HTMLCanvasElement>): void => {
     if (!peaks || duration <= 0) return
