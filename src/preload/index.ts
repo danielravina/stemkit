@@ -18,12 +18,18 @@ const api: StemKitApi = {
   getBuffers: (videoId) => ipcRenderer.invoke('song:buffers', videoId),
   getStemPan: (videoId) => ipcRenderer.invoke('song:pan:get', videoId),
   setStemPan: (videoId, pans) => ipcRenderer.invoke('song:pan:set', videoId, pans),
+  getBeatGrid: (videoId) => ipcRenderer.invoke('song:grid:get', videoId),
+  detectBeatGrid: (videoId) => ipcRenderer.invoke('song:grid:detect', videoId),
   exportStem: (videoId, stem) => ipcRenderer.invoke('stem:export', videoId, stem),
   exportAllStems: (videoId) => ipcRenderer.invoke('stems:export-all', videoId),
   searchYouTube: (query) => ipcRenderer.invoke('search:youtube', query),
-  startJob: (url, model, stems) => ipcRenderer.invoke('jobs:start', url, model, stems),
+  startJob(url, model, stems) {
+    return ipcRenderer.invoke('jobs:start', url, model, stems)
+  },
   pickAudioFile: () => ipcRenderer.invoke('files:pick-audio'),
-  startLocalJob: (filePath, model, stems) => ipcRenderer.invoke('jobs:start-local', filePath, model, stems),
+  startLocalJob(filePath, model, stems) {
+    return ipcRenderer.invoke('jobs:start-local', filePath, model, stems)
+  },
   cancelJob: (videoId?: string) => ipcRenderer.invoke('jobs:cancel', videoId),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getAppVersion: () => ipcRenderer.invoke('app:version'),

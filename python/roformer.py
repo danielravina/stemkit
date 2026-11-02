@@ -268,7 +268,7 @@ def main():
         nonlocal last_emit
         now = time.time()
         if now - last_emit >= 0.5:
-            emit(type="progress", stage="separate", pct=min(99, int(frac * 100)))
+            emit(type="progress", stage="separate", pct=min(94, int(frac * 94)))
             last_emit = now
 
     emit(type="progress", stage="separate", pct=0, message="separating")
@@ -292,8 +292,10 @@ def main():
     if np.isnan(vocals).any():
         fail("separation produced invalid audio")
     os.makedirs(args.out, exist_ok=True)
+    emit(type="progress", stage="separate", pct=96, message="Saving vocals stem")
     save_wav_f32(os.path.join(args.out, "vocals.wav"), vocals, sr)
     emit(type="stem", name="vocals")
+    emit(type="progress", stage="separate", pct=99, message="Vocals ready")
     emit(
         type="done",
         stems=["vocals"],

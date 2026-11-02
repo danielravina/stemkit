@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, openSync, r
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { userDataDir } from './env'
-import { DEFAULT_STEMS, type Song, type StemPanMap, type StemId } from '../shared/types'
+import { DEFAULT_STEMS, type Song, type StemPanMap, type StemId, type BeatGridData } from '../shared/types'
 
 // drives both the file-dialog filter and the pre-flight extension check in
 // startLocalJob; anything here is fair game for ffmpeg to decode
@@ -43,6 +43,29 @@ export function mixWavPath(videoId: string): string {
 
 export function rawDownloadPath(videoId: string): string {
   return join(songDir(videoId), 'raw.%(ext)s')
+}
+
+export function gridJsonPath(videoId: string): string {
+  return join(songDir(videoId), 'grid.json')
+}
+
+export function loadBeatGrid(videoId: string): BeatGridData | null {
+  try {
+    const p = gridJsonPath(videoId)
+    if (!existsSync(p)) return null
+    const raw = readFileSync(p, 'utf8')
+    return JSON.parse(raw) as BeatGridData
+  } catch {
+    return null
+  }
+}
+
+export function saveBeatGrid(videoId: string, data: BeatGridData): void {
+  try {
+    const p = gridJsonPath(videoId)
+    mkdirSync(songDir(videoId), { recursive: true })
+    writeFileSync(p, JSON.stringify(data, null, 2))
+  } catch {}
 }
 
 export function loadSongs(): Song[] {
@@ -89,13 +112,16 @@ function panSong(videoId: string): Song {
 function normalizePan(song: Song, value: unknown): StemPanMap {
   const pans: StemPanMap = {}
   if (!value || typeof value !== 'object' || Array.isArray(value)) return pans
-  const allowed = new Set<StemId>(['vocals', 'drums', 'bass', 'other', 'piano', 'guitar'])
+  const allowed = new Set<StemId>(['vocals', 'drums', 'bass', 'other', 'piano', 'guitar', 'click'])
   for (const id of stemsFor(song)) {
     if (!allowed.has(id as StemId)) continue
     const pan = (value as Record<string, unknown>)[id]
     if (typeof pan === 'number' && Number.isFinite(pan)) {
       pans[id as StemId] = Math.max(-1, Math.min(1, pan))
     }
+  }
+  if (allowed.has('click') && typeof (value as Record<string, unknown>)['click'] === 'number') {
+    pans['click'] = Math.max(-1, Math.min(1, (value as Record<string, unknown>)['click'] as number))
   }
   return pans
 }
@@ -164,14 +190,18 @@ export function wavDuration(path: string): number {
 }
 
 export async function stemBuffers(videoId: string, stems?: string[]): Promise<Record<string, Uint8Array>> {
-  const list = stems ?? stemsFor(loadSongs().find((s) => s.videoId === videoId))
+  const song = loadSongs().find((s) => s.videoId === videoId)
+  const list = new Set(stems ?? stemsFor(song))
   const dir = stemsDir(videoId)
+  if (existsSync(join(dir, 'click.wav'))) {
+    list.add('click')
+  }
   const out: Record<string, Uint8Array> = {}
   // async parallel reads so ~400MB of WAV doesn't block the main process
   await Promise.all(
-    list.map(async (name) => {
+    Array.from(list).map(async (name) => {
       const file = join(dir, `${name}.wav`)
-      if (!existsSync(file)) throw new Error(`Missing stem ${name} for ${videoId}`)
+      if (!existsSync(file)) return
       out[name] = new Uint8Array(await readFile(file))
     })
   )

@@ -136,7 +136,11 @@ export function Processing({
         {timing && !error && (
           <p className="mt-4 text-center text-[11px] font-mono text-white/35">
             elapsed {fmtTime(timing.elapsed)}
-            {timing.left !== null ? ` · ~${fmtTime(timing.left)} left` : ' · estimating…'}
+            {timing.left !== null
+              ? timing.left > 3
+                ? ` · ~${fmtTime(timing.left)} left`
+                : ' · finishing…'
+              : ' · estimating…'}
           </p>
         )}
 

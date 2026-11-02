@@ -107,6 +107,7 @@ def main():
     class ProgressTqdm(real_tqdm):
         def __init__(self, *a, **kw):
             super().__init__(*a, **kw)
+            self._stemkit_closed = False
             if self.total:
                 leg_state["total"] = self.total
 
@@ -115,6 +116,9 @@ def main():
             self._report(False)
 
         def close(self):
+            if getattr(self, "_stemkit_closed", False):
+                return
+            self._stemkit_closed = True
             self._report(True)
             if self.total and self.n >= self.total:
                 leg_state["done"] += 1
@@ -130,10 +134,12 @@ def main():
             frac = min(1.0, max(0.0, self.n / total))
             now = time.time()
             if force or now - leg_state["last"] >= 0.5:
+                # Reserve 0%..92% for neural network inference, leaving 92%..99%
+                # for saving multi-stem WAV files to disk
                 global_pct = int(
-                    ((leg_state["done"] + frac) / legs) * 100
+                    ((leg_state["done"] + frac) / legs) * 92
                 )
-                emit(type="progress", stage="separate", pct=min(99, global_pct))
+                emit(type="progress", stage="separate", pct=min(92, global_pct))
                 leg_state["last"] = now
 
     dapply.tqdm = types.SimpleNamespace(tqdm=ProgressTqdm) if is_module else ProgressTqdm
@@ -224,15 +230,19 @@ def main():
 
     os.makedirs(args.out, exist_ok=True)
     out_cpu = sources[0].cpu().numpy()
+    target_names = [name for name in model.sources if wanted is None or name in wanted]
+    total_targets = max(1, len(target_names))
     written = []
-    for i, name in enumerate(model.sources):
-        if wanted is not None and name not in wanted:
-            continue
+    for idx, name in enumerate(target_names):
+        pct = 92 + int(((idx + 1) / total_targets) * 7)
+        emit(type="progress", stage="separate", pct=min(99, pct), message=f"Saving {name} stem")
+        i = model.sources.index(name)
         path = os.path.join(args.out, f"{name}.wav")
         save_wav_f32(path, out_cpu[i], sr)
         written.append(name)
         emit(type="stem", name=name)
 
+    emit(type="progress", stage="separate", pct=99, message="Finalizing stems")
     emit(type="done", stems=written, out_dir=args.out)
 
 

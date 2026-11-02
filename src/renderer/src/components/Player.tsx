@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AppSettings, Song, StemId, StemPanMap } from '../../../shared/types'
+import type { AppSettings, Song, StemId, StemPanMap, BeatGridData } from '../../../shared/types'
 import { engine, decodePayload, type BufferMap } from '../lib/engine'
 import { buildStemMeta } from '../lib/stems'
 import { fmtTime } from '../lib/format'
@@ -10,7 +10,7 @@ import { Transport, type PresetId } from './Transport'
 import { DownloadIcon } from './Icons'
 
 // number keys 1-6 mute the lane shown in that position, top to bottom
-const STEM_KEYS = ['1', '2', '3', '4', '5', '6']
+const STEM_KEYS = ['1', '2', '3', '4', '5', '6', '7']
 
 type BufferCacheMap = BufferMap
 
@@ -80,6 +80,58 @@ export function Player({ song, settings }: Props): React.ReactElement {
     loopRef.current = { a: loopA, b: loopB, active: isLoopActive }
   }, [loopA, loopB, isLoopActive])
 
+  const [metronomeOn, setMetronomeOn] = useState(false)
+  const [beatGrid, setBeatGrid] = useState<BeatGridData | null>(null)
+  const [detectingBpm, setDetectingBpm] = useState(false)
+
+
+
+  const detectBpm = useCallback(async () => {
+    setDetectingBpm(true)
+    try {
+      const grid = await window.stemkit.detectBeatGrid(song.videoId)
+      if (grid) {
+        setBeatGrid(grid)
+        engine.setBeatGrid(grid)
+        const freshPayload = await window.stemkit.getBuffers(song.videoId)
+        if (freshPayload['click']) {
+          const freshBuffers = await decodePayload(freshPayload)
+          setBuffers(freshBuffers)
+          engine.setBuffers(freshBuffers)
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to detect beat grid:', err)
+    } finally {
+      setDetectingBpm(false)
+    }
+  }, [song.videoId])
+
+  useEffect(() => {
+    let cancelled = false
+    setMetronomeOn(false)
+    engine.setMetronomeEnabled(false)
+    setBeatGrid(null)
+    engine.setBeatGrid(null)
+
+    window.stemkit
+      .getBeatGrid(song.videoId)
+      .then((grid) => {
+        if (cancelled) return
+        if (grid) {
+          setBeatGrid(grid)
+          engine.setBeatGrid(grid)
+        } else {
+          void detectBpm()
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [song.videoId, detectBpm])
+
   const stemMeta = useMemo(() => buildStemMeta(Object.keys(buffers) as StemId[]), [buffers])
 
   // local files have no video to sync: the player runs audio-only, with a
@@ -109,7 +161,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
     setBuffers({})
     setDuration(song.duration || 0)
     setVols({})
-    setMutes(new Set())
+    setMutes(new Set<StemId>(['click']))
     setSolos(new Set())
     setPreset('all')
     setLoopA(null)
@@ -391,12 +443,19 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
   const applyPreset = (p: PresetId): void => {
     setPreset(p)
-    setMutes(new Set())
-    if (p === 'all') setSolos(new Set())
-    else if (p === 'karaoke')
-      setSolos(new Set<StemId>(stemMeta.filter((s) => s.id !== 'vocals').map((s) => s.id)))
-    else if (p === 'acapella') setSolos(new Set<StemId>(['vocals']))
-    else if (p === 'drumnbass') setSolos(new Set<StemId>(['drums', 'bass']))
+    if (p === 'all') {
+      setMutes(new Set<StemId>(['click']))
+      setSolos(new Set())
+    } else if (p === 'karaoke') {
+      setMutes(new Set<StemId>(['click']))
+      setSolos(new Set<StemId>(stemMeta.filter((s) => s.id !== 'vocals' && s.id !== 'click').map((s) => s.id)))
+    } else if (p === 'acapella') {
+      setMutes(new Set<StemId>(['click']))
+      setSolos(new Set<StemId>(['vocals']))
+    } else if (p === 'drumnbass') {
+      setMutes(new Set<StemId>(['click']))
+      setSolos(new Set<StemId>(['drums', 'bass']))
+    }
   }
 
   const toggleMute = useCallback(
@@ -419,6 +478,23 @@ export function Player({ song, settings }: Props): React.ReactElement {
     },
     [mutes, solos]
   )
+
+  const hasClickStem = Boolean(buffers['click'])
+  const isClickAudible = hasClickStem
+    ? !mutes.has('click')
+    : metronomeOn
+
+  const toggleMetronome = useCallback(() => {
+    if (buffers['click']) {
+      toggleMute('click')
+    } else {
+      setMetronomeOn((prev) => {
+        const next = !prev
+        engine.setMetronomeEnabled(next)
+        return next
+      })
+    }
+  }, [buffers, toggleMute])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -450,6 +526,11 @@ export function Player({ song, settings }: Props): React.ReactElement {
           clearLoop()
           return
         }
+        if (e.key === 'm' || e.key === 'M') {
+          e.preventDefault()
+          toggleMetronome()
+          return
+        }
       }
 
       const lane = STEM_KEYS.indexOf(e.key)
@@ -464,7 +545,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePlay, toggleMute, stemMeta, seekTo, decoding, decodeError, setPointA, setPointB, toggleLoop, clearLoop])
+  }, [togglePlay, toggleMute, stemMeta, seekTo, decoding, decodeError, setPointA, setPointB, toggleLoop, clearLoop, toggleMetronome])
 
   const toggleSolo = (id: StemId): void => {
     setPreset('custom')
@@ -587,6 +668,12 @@ export function Player({ song, settings }: Props): React.ReactElement {
             onSetPointB={setPointB}
             onToggleLoop={toggleLoop}
             onClearLoop={clearLoop}
+            metronomeOn={isClickAudible}
+            onToggleMetronome={toggleMetronome}
+            bpm={beatGrid?.bpm}
+            meter={beatGrid?.meter}
+            detectingBpm={detectingBpm}
+            onDetectBpm={detectBpm}
           />
 
           {panError && <p role="status" className="mt-3 text-xs text-amber-300">{panError}</p>}
@@ -606,7 +693,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
                 buffer={buffers[meta.id] ?? null}
                 duration={duration}
                 getPosition={getPosition}
-                audible={!mutes.has(meta.id) && (solos.size === 0 || solos.has(meta.id))}
+                audible={meta.id === 'click' ? !mutes.has('click') : (!mutes.has(meta.id) && (solos.size === 0 || solos.has(meta.id)))}
                 volume={vols[meta.id] ?? 1}
                 pan={pans[meta.id] ?? 0}
                 onPan={(value) => changePan(meta.id, value)}
