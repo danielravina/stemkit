@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type { JobEvent, EnvEvent, UpdateEvent, AppSettings, StemKitApi } from '../shared/types'
 
 function subscribe<T>(channel: string, cb: (data: T) => void): () => void {
@@ -15,6 +15,7 @@ const api: StemKitApi = {
   envUpdateYtDlp: () => ipcRenderer.invoke('env:update-ytdlp'),
   listSongs: () => ipcRenderer.invoke('library:list'),
   deleteSong: (videoId) => ipcRenderer.invoke('library:delete', videoId),
+  clearLibrary: () => ipcRenderer.invoke('library:clear'),
   getBuffers: (videoId) => ipcRenderer.invoke('song:buffers', videoId),
   getStemPan: (videoId) => ipcRenderer.invoke('song:pan:get', videoId),
   setStemPan: (videoId, pans) => ipcRenderer.invoke('song:pan:set', videoId, pans),
@@ -27,9 +28,11 @@ const api: StemKitApi = {
     return ipcRenderer.invoke('jobs:start', url, model, stems)
   },
   pickAudioFile: () => ipcRenderer.invoke('files:pick-audio'),
-  startLocalJob(filePath, model, stems) {
-    return ipcRenderer.invoke('jobs:start-local', filePath, model, stems)
-  },
+  pickFolder: () => ipcRenderer.invoke('files:pick-folder'),
+  // Electron 32 dropped the File.path augmentation, so a dropped file's path
+  // on disk has to be resolved here — it is the only place with node access
+  getPathForFile: (file) => webUtils.getPathForFile(file),
+  startLocalJob: (filePath, model, stems) => ipcRenderer.invoke('jobs:start-local', filePath, model, stems),
   cancelJob: (videoId?: string) => ipcRenderer.invoke('jobs:cancel', videoId),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   getAppVersion: () => ipcRenderer.invoke('app:version'),
