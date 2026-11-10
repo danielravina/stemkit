@@ -9,6 +9,7 @@ import {
   getStatus,
   venvPython,
   separateScript,
+  keyScript,
   roformerScript,
   modelsDir,
   bundledFfmpeg,
@@ -79,6 +80,43 @@ function runScript(cmd: string, args: string[]): Promise<ScriptResult> {
         })
     })
     child.on('error', (e) => resolve({ ok: false, stems, error: String(e) }))
+  })
+}
+
+/* key.py reports {"type":"key"} rather than stems, so runScript's stem check
+   would reject every good run; this only needs the key line and exit 0 */
+function runKeyDetection(mix: string): Promise<{ ok: boolean; error?: string }> {
+  return new Promise((resolve) => {
+    log(`run: ${venvPython()} ${keyScript()} --input ${mix}`)
+    const child = spawn(venvPython(), [keyScript(), '--input', mix], { env: { ...process.env } })
+    let error: string | undefined
+    let keyFound = false
+    createInterface({ input: child.stdout! }).on('line', (line) => {
+      let parsed: Record<string, unknown>
+      try {
+        parsed = JSON.parse(line)
+      } catch {
+        return
+      }
+      if (parsed.type === 'key') keyFound = true
+      else if (parsed.type === 'error') error = String(parsed.message)
+    })
+    let stderr = ''
+    child.stderr?.on('data', (c: Buffer) => {
+      stderr += c.toString()
+    })
+    child.on('close', (code) => {
+      if (code === 0 && keyFound && !error) resolve({ ok: true })
+      else
+        resolve({
+          ok: false,
+          error:
+            error ??
+            (stderr ? stderr.slice(-500) : undefined) ??
+            `exit code ${code}, no key reported`
+        })
+    })
+    child.on('error', (e) => resolve({ ok: false, error: String(e) }))
   })
 }
 
@@ -191,6 +229,13 @@ export async function runSmoke(): Promise<boolean> {
         return false
       }
     }
+
+    const key = await runKeyDetection(mix)
+    if (!key.ok) {
+      log(`FAIL: key detection: ${key.error}`)
+      return false
+    }
+    log('key detection ok')
 
     // roformer engine on CPU: validates the vendored model code, extra pip
     // deps and its own checkpoint downloader on this platform
