@@ -143,7 +143,10 @@ export interface StemKitApi {
   getPitch(videoId: string): Promise<number>
   setPitch(videoId: string, semitones: number): Promise<void>
   exportStem(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>
-  exportAllStems(videoId: string): Promise<{ saved: boolean; path?: string; count?: number }>
+  exportBegin(kind: 'file' | 'folder', name: string): Promise<{ token: string; path: string } | null>
+  exportWrite(token: string, fileName: string | null, wav: Uint8Array): Promise<string>
+  exportEnd(token: string): Promise<void>
+  getMix(videoId: string): Promise<Uint8Array | null>
   searchYouTube(query: string): Promise<SearchResult[]>
   startJob(url: string, model?: string, stems?: string[]): Promise<{ started: boolean }>
   pickAudioFile(): Promise<string | null>

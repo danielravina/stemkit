@@ -171,6 +171,13 @@ function normalizePan(song: Song, value: unknown): StemPanMap {
   return pans
 }
 
+// the rendered mix, or null while it hasn't been produced
+export function loadMix(videoId: string): Buffer | null {
+  panSong(videoId)
+  const file = mixWavPath(videoId)
+  return existsSync(file) ? readFileSync(file) : null
+}
+
 export function loadStemPan(videoId: string): StemPanMap {
   const song = panSong(videoId)
   try {

@@ -358,10 +358,6 @@ export function Player({ song, settings }: Props): React.ReactElement {
     [song.videoId]
   )
 
-  const exportAllStems = useCallback((): void => {
-    void window.stemkit.exportAllStems(song.videoId)
-  }, [song.videoId])
-
 
 
   const applyPreset = (p: PresetId): void => {
@@ -501,8 +497,8 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
               <div className="flex items-center gap-3">
                 <button
-                  onClick={exportAllStems}
-                  disabled={decoding || !!decodeError}
+                  // temporary: Task 4 replaces this with the Export dialog
+                  disabled
                   className="no-drag glass rounded-xl px-5 py-3 text-[13px] font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-2 disabled:opacity-40"
                 >
                   <DownloadIcon className="w-4 h-4" />
