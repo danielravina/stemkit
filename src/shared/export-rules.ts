@@ -30,12 +30,14 @@ function shiftSuffix(semitones: number): string {
   return ` (${semitones > 0 ? '+' : '-'}${Math.abs(semitones)})`
 }
 
-// main cuts sanitized names at 120 chars; capping the title first keeps the
-// " - drums+bass (+2)" part, which is what tells two exports of a song apart
-const TITLE_LIMIT = 80
+// main cuts sanitized names at 120 chars (sanitizeName); the title gives way
+// first so the " - drums+bass (+2)" part, which tells two exports apart, survives
+const NAME_LIMIT = 120
 
-function shortTitle(title: string): string {
-  return title.length > TITLE_LIMIT ? title.slice(0, TITLE_LIMIT).trimEnd() : title
+function withSuffix(title: string, suffix: string): string {
+  const room = Math.max(0, NAME_LIMIT - suffix.length)
+  const head = title.length > room ? title.slice(0, room).trimEnd() : title
+  return `${head}${suffix}`
 }
 
 export function mixedBaseName(
@@ -50,9 +52,9 @@ export function mixedBaseName(
     chosen.length === allStems.length - 1 &&
     !chosen.includes('vocals')
   const part = isInstrumental ? 'instrumental' : chosen.join('+')
-  return `${shortTitle(title)} - ${part}${shiftSuffix(semitones)}`
+  return withSuffix(title, ` - ${part}${shiftSuffix(semitones)}`)
 }
 
 export function separateFolderName(title: string, semitones: number): string {
-  return `${shortTitle(title)}${shiftSuffix(semitones)}`
+  return withSuffix(title, shiftSuffix(semitones))
 }

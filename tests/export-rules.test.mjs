@@ -56,8 +56,15 @@ test('long titles are cut so the stem and shift suffix survive a 120-char name l
   const mixed = mixedBaseName(title, ['drums', 'bass'], ALL, 2)
   assert.ok(mixed.length <= 120, `length ${mixed.length}`)
   assert.ok(mixed.endsWith(' - drums+bass (+2)'))
-  assert.equal(mixed, `${'x'.repeat(80)} - drums+bass (+2)`)
-  assert.equal(separateFolderName(title, -1), `${'x'.repeat(80)} (-1)`)
+  assert.equal(mixed, `${'x'.repeat(102)} - drums+bass (+2)`)
+  assert.equal(separateFolderName(title, -1), `${'x'.repeat(115)} (-1)`)
   // short titles are untouched
   assert.equal(separateFolderName('Song', 0), 'Song')
+})
+
+test('the suffix survives even with every stem of a 6-stem song checked and a shift', () => {
+  const six = ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other']
+  const name = mixedBaseName('y'.repeat(200), six, six, -6)
+  assert.ok(name.length <= 120, `length ${name.length}`)
+  assert.ok(name.endsWith(' - vocals+drums+bass+guitar+piano+other (-6)'))
 })
