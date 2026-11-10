@@ -50,3 +50,14 @@ test('separateFolderName appends the shift only when non-zero', () => {
   assert.equal(separateFolderName('Song', 2), 'Song (+2)')
   assert.equal(separateFolderName('Song', -3), 'Song (-3)')
 })
+
+test('long titles are cut so the stem and shift suffix survive a 120-char name limit', () => {
+  const title = 'x'.repeat(200)
+  const mixed = mixedBaseName(title, ['drums', 'bass'], ALL, 2)
+  assert.ok(mixed.length <= 120, `length ${mixed.length}`)
+  assert.ok(mixed.endsWith(' - drums+bass (+2)'))
+  assert.equal(mixed, `${'x'.repeat(80)} - drums+bass (+2)`)
+  assert.equal(separateFolderName(title, -1), `${'x'.repeat(80)} (-1)`)
+  // short titles are untouched
+  assert.equal(separateFolderName('Song', 0), 'Song')
+})
