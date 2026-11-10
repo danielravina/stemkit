@@ -72,7 +72,7 @@ export function KeyControl({ songKey, onOverride, children }: Props): React.Reac
         <div
           role="dialog"
           aria-label="Original key"
-          className="no-drag absolute bottom-full left-0 mb-2 z-50 w-64 p-2 rounded-xl bg-[#16151d] border border-white/[0.08] shadow-2xl"
+          className="no-drag absolute bottom-full right-0 mb-2 z-50 w-64 p-2 rounded-xl bg-[#16151d] border border-white/[0.08] shadow-2xl"
         >
           {songKey?.detected && (
             <button

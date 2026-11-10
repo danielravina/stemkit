@@ -135,7 +135,8 @@ export function Player({ song, settings }: Props): React.ReactElement {
           if (!cancelled) setSongKey(k)
         })
         .catch(() => {
-          // detection is best-effort; the label falls back to '…'
+          // detection is best-effort: show '?' rather than analysing forever
+          if (!cancelled) setSongKey({ detected: null })
         })
     }
     const flushPan = (): void => {
