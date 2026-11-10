@@ -29,6 +29,9 @@ const hooks = registerHooks({
     if (context.parentURL === src('keydetect.ts') && specifier === './separation-slots') {
       return { shortCircuit: true, url: src('separation-slots.ts') }
     }
+    if (parents.has(context.parentURL) && specifier === '../shared/pitch-range') {
+      return { shortCircuit: true, url: new URL('../src/shared/pitch-range.ts', import.meta.url).href }
+    }
     return next(specifier, context)
   }
 })

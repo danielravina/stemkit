@@ -140,6 +140,8 @@ export interface StemKitApi {
   detectKey(videoId: string, force?: boolean): Promise<SongKey>
   setKeyOverride(videoId: string, override: string | null): Promise<SongKey>
   setStemPan(videoId: string, pans: StemPanMap): Promise<void>
+  getPitch(videoId: string): Promise<number>
+  setPitch(videoId: string, semitones: number): Promise<void>
   exportStem(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>
   exportAllStems(videoId: string): Promise<{ saved: boolean; path?: string; count?: number }>
   searchYouTube(query: string): Promise<SearchResult[]>

@@ -19,6 +19,9 @@ const hooks = registerHooks({
     if (context.parentURL === libraryUrl && specifier === '../shared/keys') {
       return { shortCircuit: true, url: new URL('../src/shared/keys.ts', import.meta.url).href }
     }
+    if (context.parentURL === libraryUrl && specifier === '../shared/pitch-range') {
+      return { shortCircuit: true, url: new URL('../src/shared/pitch-range.ts', import.meta.url).href }
+    }
     return next(specifier, context)
   }
 })

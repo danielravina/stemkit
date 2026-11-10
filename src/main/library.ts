@@ -4,6 +4,7 @@ import { spawn } from 'child_process'
 import { join } from 'path'
 import { userDataDir } from './env'
 import { KEY_NAMES } from '../shared/keys'
+import { clampPitch } from '../shared/pitch-range'
 import { DEFAULT_STEMS, type Song, type SongKey, type StemPanMap, type StemId } from '../shared/types'
 
 function libraryFile(): string {
@@ -183,6 +184,21 @@ export function saveStemPan(videoId: string, pans: unknown): void {
   const song = panSong(videoId)
   // Do not recreate a deleted song directory for a late player save.
   writeFileSync(join(songDir(videoId), 'pan.json'), JSON.stringify(normalizePan(song, pans), null, 2))
+}
+
+export function loadPitch(videoId: string): number {
+  panSong(videoId)
+  try {
+    return clampPitch(JSON.parse(readFileSync(join(songDir(videoId), 'pitch.json'), 'utf8')).semitones)
+  } catch {
+    return 0
+  }
+}
+
+export function savePitch(videoId: string, semitones: unknown): void {
+  panSong(videoId)
+  // Do not recreate a deleted song directory for a late player save.
+  writeFileSync(join(songDir(videoId), 'pitch.json'), JSON.stringify({ semitones: clampPitch(semitones) }, null, 2))
 }
 
 export function stemsPresent(videoId: string, stems: string[]): boolean {

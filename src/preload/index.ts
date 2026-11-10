@@ -21,6 +21,8 @@ const api: StemKitApi = {
   detectKey: (videoId, force) => ipcRenderer.invoke('song:key:detect', videoId, force === true),
   setKeyOverride: (videoId, override) => ipcRenderer.invoke('song:key:set', videoId, override),
   setStemPan: (videoId, pans) => ipcRenderer.invoke('song:pan:set', videoId, pans),
+  getPitch: (videoId) => ipcRenderer.invoke('song:pitch:get', videoId),
+  setPitch: (videoId, semitones) => ipcRenderer.invoke('song:pitch:set', videoId, semitones),
   exportStem: (videoId, stem) => ipcRenderer.invoke('stem:export', videoId, stem),
   exportAllStems: (videoId) => ipcRenderer.invoke('stems:export-all', videoId),
   searchYouTube: (query) => ipcRenderer.invoke('search:youtube', query),
