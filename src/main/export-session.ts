@@ -9,6 +9,13 @@ import { sanitizeName } from './library'
 // the format is pinned at begin: the dialog already showed that extension to the user
 type Session = { kind: 'file' | 'folder'; path: string; format: 'wav' | 'aac' }
 const sessions = new Map<string, Session>()
+// "Show in folder" takes a path from the renderer, so main only reveals what an
+// export actually wrote this run (the file, or the folder of a separate export)
+const revealable = new Set<string>()
+
+export function canReveal(path: string): boolean {
+  return revealable.has(path)
+}
 
 export function openSession(kind: 'file' | 'folder', path: string, format: 'wav' | 'aac'): string {
   const token = randomUUID()
@@ -40,8 +47,19 @@ export async function writeToSession(
   }
   if (format === 'wav') {
     await writeFile(dest, wav)
-    return dest
+  } else {
+    await transcodeVia(dest, wav, transcode)
   }
+  revealable.add(dest)
+  if (session.kind === 'folder') revealable.add(session.path)
+  return dest
+}
+
+async function transcodeVia(
+  dest: string,
+  wav: Uint8Array,
+  transcode: (src: string, dest: string) => Promise<void>
+): Promise<void> {
   // next to the destination so the temp file lives on the same volume
   const tmp = join(dirname(dest), `.stemkit-${randomUUID()}.wav`)
   try {
@@ -54,7 +72,6 @@ export async function writeToSession(
   } finally {
     await rm(tmp, { force: true })
   }
-  return dest
 }
 
 export function closeSession(token: string): void {

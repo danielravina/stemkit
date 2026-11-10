@@ -146,6 +146,8 @@ export interface StemKitApi {
   exportBegin(kind: 'file' | 'folder', name: string): Promise<{ token: string; path: string } | null>
   exportWrite(token: string, fileName: string | null, wav: Uint8Array): Promise<string>
   exportEnd(token: string): Promise<void>
+  // opens the OS file manager at a path an export wrote this run (others are refused)
+  exportReveal(path: string): Promise<void>
   getMix(videoId: string): Promise<Uint8Array | null>
   searchYouTube(query: string): Promise<SearchResult[]>
   startJob(url: string, model?: string, stems?: string[]): Promise<{ started: boolean }>

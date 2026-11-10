@@ -27,6 +27,7 @@ const api: StemKitApi = {
   exportBegin: (kind, name) => ipcRenderer.invoke('export:begin', kind, name),
   exportWrite: (token, fileName, wav) => ipcRenderer.invoke('export:write', token, fileName, wav),
   exportEnd: (token) => ipcRenderer.invoke('export:end', token),
+  exportReveal: (path) => ipcRenderer.invoke('export:reveal', path),
   getMix: (videoId) => ipcRenderer.invoke('song:mix', videoId),
   searchYouTube: (query) => ipcRenderer.invoke('search:youtube', query),
   startJob: (url, model, stems) => ipcRenderer.invoke('jobs:start', url, model, stems),

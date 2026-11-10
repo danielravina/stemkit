@@ -1,14 +1,14 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerTsHooks } from './helpers/ts-resolve.mjs'
-import { mkdtempSync, readFileSync, existsSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, existsSync, readdirSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const root = mkdtempSync(join(tmpdir(), 'stemkit-session-'))
 after(() => rmSync(root, { recursive: true, force: true }))
 const hooks = registerTsHooks({ stubEnv: `export const userDataDir = () => ${JSON.stringify(root)}` })
-const { openSession, writeToSession, closeSession } = await import(
+const { openSession, writeToSession, closeSession, canReveal } = await import(
   new URL('../src/main/export-session.ts', import.meta.url).href
 )
 hooks.deregister()
@@ -98,4 +98,23 @@ test('failing transcode removes a partial destination file', async () => {
   )
   assert.deepEqual(readdirSync(dir), [])
   closeSession(token)
+})
+
+test('only paths written by a session can be revealed', async () => {
+  const dir = mkdtempSync(join(root, 'reveal-'))
+  const file = openSession('file', join(dir, 'mixed.wav'), 'wav')
+  assert.equal(canReveal(join(dir, 'mixed.wav')), false)
+  const out = await writeToSession(file, null, wav, noTranscode)
+  assert.equal(canReveal(out), true)
+  const sub = join(dir, 'Song (+2)')
+  mkdirSync(sub)
+  const folder = openSession('folder', sub, 'wav')
+  assert.equal(canReveal(sub), false)
+  await writeToSession(folder, 'drums', wav, noTranscode)
+  assert.equal(canReveal(sub), true)
+  assert.equal(canReveal(join(sub, 'drums.wav')), true)
+  assert.equal(canReveal(dir), false)
+  assert.equal(canReveal('/etc/passwd'), false)
+  closeSession(file)
+  closeSession(folder)
 })

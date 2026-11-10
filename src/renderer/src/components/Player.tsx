@@ -97,6 +97,8 @@ export function Player({ song, settings }: Props): React.ReactElement {
   const [pitchError, setPitchError] = useState<string | null>(null)
   const [preset, setPreset] = useState<PresetId | 'custom'>('all')
   const [exportOpen, setExportOpen] = useState(false)
+  // the dialog closes on success, so the result is reported here
+  const [exportNotice, setExportNotice] = useState<{ text: string; path: string } | null>(null)
 
   const stemMeta = useMemo(() => buildStemMeta(Object.keys(buffers) as StemId[]), [buffers])
 
@@ -131,6 +133,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
     setSolos(new Set())
     setPreset('all')
     setExportOpen(false)
+    setExportNotice(null)
     engine.stopAll()
     // the engine applies pitch lazily, so the UI keeps its own value
     setSemitones(0)
@@ -378,8 +381,17 @@ export function Player({ song, settings }: Props): React.ReactElement {
       semitones: shifted ? semitones : 0
     }
     // null means the user cancelled the picker
-    if (mode === 'mixed') return (await exportMixed(opts)) !== null
-    return (await exportSeparate({ ...opts, includeMix: selected.has(MIX_ID) })) !== null
+    if (mode === 'mixed') {
+      const path = await exportMixed(opts)
+      if (path === null) return false
+      setExportNotice({ text: `Exported to ${path}`, path })
+      return true
+    }
+    const result = await exportSeparate({ ...opts, includeMix: selected.has(MIX_ID) })
+    if (result === null) return false
+    const files = result.count === 1 ? '1 file' : `${result.count} files`
+    setExportNotice({ text: `Exported ${files} to ${result.path}`, path: result.path })
+    return true
   }
 
   const applyPreset = (p: PresetId): void => {
@@ -591,6 +603,17 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
           {panError && <p role="status" className="mt-3 text-xs text-amber-300">{panError}</p>}
           {pitchError && <p role="status" className="mt-3 text-xs text-amber-300">{pitchError}</p>}
+          {exportNotice && (
+            <p role="status" className="mt-3 flex items-center gap-2 text-xs text-emerald-300">
+              <span className="min-w-0 break-all">{exportNotice.text}</span>
+              <button
+                onClick={() => void window.stemkit.exportReveal(exportNotice.path).catch(() => {})}
+                className="no-drag shrink-0 rounded-md px-2 py-0.5 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                Show in folder
+              </button>
+            </p>
+          )}
           <div className="mt-4 space-y-2">
             {decoding
               ? [...Array(4)].map((_, i) => (

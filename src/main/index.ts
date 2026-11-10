@@ -34,7 +34,7 @@ import {
   loadMix, transcodeToAac, loadStemPan, saveStemPan, loadPitch, savePitch, setKeyOverride
 } from './library'
 import { AUDIO_EXTENSIONS } from '../shared/local'
-import { openSession, writeToSession, closeSession } from './export-session'
+import { openSession, writeToSession, closeSession, canReveal } from './export-session'
 import { detectOnce } from './keydetect'
 import { startJob, startLocalJob, cancelJob, searchYouTube } from './pipeline'
 import { initUpdater } from './updater'
@@ -340,6 +340,10 @@ app.whenReady().then(async () => {
     }
   )
   ipcMain.handle('export:end', (_e, token: string) => closeSession(token))
+  ipcMain.handle('export:reveal', (_e, path: string) => {
+    if (!canReveal(String(path))) throw new Error('Not an exported file')
+    shell.showItemInFolder(path)
+  })
   ipcMain.handle('song:mix', (_e, videoId: string) => loadMix(videoId))
 
   ipcMain.handle('search:youtube', (_e, query: string) => searchYouTube(query))
