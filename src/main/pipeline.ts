@@ -174,12 +174,9 @@ async function convertToWav(job: ActiveJob, inputPath: string): Promise<void> {
 // runKeyScript never throws: a failed detection just leaves the song keyless
 async function detectKey(job: ActiveJob, producedStems: string[]): Promise<SongKey> {
   progress(job, 'finalize', 100, 'Detecting key')
-  const release = await acquireSeparation()
-  try {
-    return await runKeyScript(keyInputs(job.videoId, producedStems))
-  } finally {
-    release()
-  }
+  // no separation slot: ours is already released, and queueing behind another
+  // song's whole split would delay this song's library entry
+  return runKeyScript(keyInputs(job.videoId, producedStems))
 }
 
 function finalizeJob(

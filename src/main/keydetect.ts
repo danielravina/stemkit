@@ -74,14 +74,15 @@ export function detectOnce(videoId: string, run = runKeyScript): Promise<SongKey
   if (existing) return existing
   const song = loadSongs().find((s) => s.videoId === videoId)
   if (!song) return Promise.resolve({ detected: null })
-  // a stored result is final; a stored override-only entry still needs detecting
-  if (song.key?.detected) return Promise.resolve(song.key)
+  // detection is attempted once per song: any stored key, even
+  // { detected: null } (attempted and failed), is final
+  if (song.key) return Promise.resolve(song.key)
   const job = (async (): Promise<SongKey> => {
     const release = await acquireSeparation()
     try {
       const result = await run(keyInputs(videoId, stemsFor(song)))
-      if (!result.detected) return song.key ?? result
-      // keep a user override that was set before detection finished
+      // keep a user override that was set before detection finished; a
+      // failure is stored too so it is not retried
       const current = loadSongs().find((s) => s.videoId === videoId)?.key
       const key: SongKey = current?.override ? { ...result, override: current.override } : result
       patchSongKey(videoId, key)

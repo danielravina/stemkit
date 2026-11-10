@@ -90,3 +90,26 @@ test('detectOnce dedupes concurrent calls, caches, and skips unknown songs', asy
   assert.deepEqual(await detectOnce('nope', run), { detected: null })
   assert.equal(calls, 1)
 })
+
+test('detectOnce attempts once: a failure is stored and never retried', async () => {
+  saveSongs([mk('f')])
+  mkdirSync(join(root, 'songs', 'f'), { recursive: true })
+  let calls = 0
+  const run = async () => {
+    calls++
+    return { detected: null }
+  }
+  assert.deepEqual(await detectOnce('f', run), { detected: null })
+  assert.deepEqual(loadSongs()[0].key, { detected: null })
+  assert.deepEqual(await detectOnce('f', run), { detected: null })
+  assert.equal(calls, 1)
+})
+
+test('an override on a keyless song marks it attempted', async () => {
+  saveSongs([mk('g')])
+  setKeyOverride('g', 'Am')
+  assert.deepEqual(loadSongs()[0].key, { detected: null, override: 'Am' })
+  let calls = 0
+  await detectOnce('g', async () => (calls++, { detected: 'C' }))
+  assert.equal(calls, 0)
+})
