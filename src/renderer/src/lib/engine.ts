@@ -1,4 +1,6 @@
 import type { StemId, StemPanMap } from '../../../shared/types'
+import { clampPitch, createPitchShifter } from './pitch'
+import type { PitchShifter, ShifterFactory } from './pitch'
 
 export type BufferMap = Partial<Record<StemId, AudioBuffer>>
 
@@ -46,6 +48,21 @@ export class StemEngine {
   private anchorYt = 0
   private anchorCtx = 0
   rate = 1
+  // the latest requested pitch; may differ from the applied one while the
+  // shifter loads or before the AudioContext exists
+  private wantedPitch = 0
+  private appliedPitch = 0
+  // created once and reused: building a worklet per change is slow and leaks
+  private shifterLoad: Promise<PitchShifter> | null = null
+  // the shifter master currently feeds, or null when bypassed
+  private routed: PitchShifter | null = null
+  pitchError: string | null = null
+
+  private readonly shifterFactory: ShifterFactory
+
+  constructor(factory: ShifterFactory = createPitchShifter) {
+    this.shifterFactory = factory
+  }
 
   private ensureCtx(): AudioContext {
     if (!this.ctx) {
@@ -53,8 +70,67 @@ export class StemEngine {
       this.master = this.ctx.createGain()
       this.master.gain.value = this.mix.master
       this.master.connect(this.ctx.destination)
+      // a pitch chosen before the first play is applied now
+      if (this.wantedPitch !== 0) void this.applyPitch()
     }
     return this.ctx
+  }
+
+  pitch(): number {
+    return this.appliedPitch
+  }
+
+  async setPitch(semitones: number): Promise<void> {
+    this.wantedPitch = clampPitch(semitones)
+    // no context yet (nothing played): ensureCtx applies it later
+    if (!this.ctx) return
+    await this.applyPitch()
+  }
+
+  private async applyPitch(): Promise<void> {
+    if (this.wantedPitch === 0) {
+      // exact bypass: the shifter is never perfectly transparent
+      this.appliedPitch = 0
+      this.route(null)
+      return
+    }
+    let shifter: PitchShifter
+    try {
+      shifter = await (this.shifterLoad ??= this.shifterFactory(this.ctx!))
+    } catch (err) {
+      this.pitchError = err instanceof Error ? err.message : String(err)
+      this.appliedPitch = 0
+      this.route(null)
+      return
+    }
+    this.pitchError = null
+    // calls overlapping the load all land here: read the value again so the
+    // last press wins (and a return to 0 meanwhile stays in bypass)
+    const want = this.wantedPitch
+    if (want === 0) return this.route(null)
+    shifter.setSemitones(want)
+    this.appliedPitch = want
+    this.route(shifter)
+  }
+
+  private route(next: PitchShifter | null): void {
+    if (next === this.routed) return
+    const ctx = this.ctx!
+    const master = this.master!
+    master.disconnect()
+    // a bypassed shifter stays alive with no input (it just processes
+    // silence) so the next non-zero pitch does not rebuild it
+    this.routed?.output.disconnect()
+    if (next) {
+      master.connect(next.input)
+      next.output.connect(ctx.destination)
+    } else {
+      master.connect(ctx.destination)
+    }
+    this.routed = next
+    // the path latency changed: restart the sources from where the listener
+    // is now so the clock and the video stay in step
+    if (this.playing) this.align(this.expected())
   }
 
   private getGain(id: StemId): GainNode {
@@ -124,12 +200,22 @@ export class StemEngine {
       src.start(startAt, Math.min(Math.max(0, time), Math.max(0, buf.duration - 0.01)))
       this.sources.push(src)
     }
-    this.anchorCtx = startAt
+    // anchorCtx is when anchorYt becomes audible: the shifter delays the
+    // sound by its latency, so the clock starts that much later
+    this.anchorCtx = startAt + (this.routed ? this.routed.latency : 0)
   }
 
+  // Held at anchorYt until the first sample is audible, then advances with the
+  // context clock. A re-route calls align(expected()), so the new anchorYt is
+  // the value expected() had just before: the clock pauses for the start delay
+  // plus the new path's latency and never goes backwards. The price is that
+  // the listener hears up to one old-path latency (≈0.12 s) of audio again or
+  // skipped, far below Player's 0.4 s re-seek threshold
   expected(): number {
     if (!this.ctx || !this.playing) return this.anchorYt
-    return this.anchorYt + (this.ctx.currentTime - this.anchorCtx) * this.rate
+    const now = this.ctx.currentTime
+    if (now < this.anchorCtx) return this.anchorYt
+    return this.anchorYt + (now - this.anchorCtx) * this.rate
   }
 
   trackDuration(): number {
