@@ -8,6 +8,9 @@ import { YouTubeHost, type YTState } from '../lib/youtube'
 import { StemLane } from './StemLane'
 import { Transport, type PresetId } from './Transport'
 import { DownloadIcon } from './Icons'
+import { ExportDialog } from './ExportDialog'
+import { exportMixed, exportSeparate } from '../lib/exporter'
+import { MIX_ID, initialSelection, type ExportMode } from '../../../shared/export-rules'
 
 // number keys 1-6 mute the lane shown in that position, top to bottom
 const STEM_KEYS = ['1', '2', '3', '4', '5', '6']
@@ -93,6 +96,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
   const [semitones, setSemitones] = useState(0)
   const [pitchError, setPitchError] = useState<string | null>(null)
   const [preset, setPreset] = useState<PresetId | 'custom'>('all')
+  const [exportOpen, setExportOpen] = useState(false)
 
   const stemMeta = useMemo(() => buildStemMeta(Object.keys(buffers) as StemId[]), [buffers])
 
@@ -126,6 +130,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
     setMutes(new Set())
     setSolos(new Set())
     setPreset('all')
+    setExportOpen(false)
     engine.stopAll()
     // the engine applies pitch lazily, so the UI keeps its own value
     setSemitones(0)
@@ -358,7 +363,24 @@ export function Player({ song, settings }: Props): React.ReactElement {
     [song.videoId]
   )
 
-
+  const runExport = async (
+    mode: ExportMode,
+    selected: Set<string>,
+    shifted: boolean
+  ): Promise<void> => {
+    const opts = {
+      videoId: song.videoId,
+      title: song.title,
+      stems: stemMeta.map((s) => s.id),
+      selected: [...selected],
+      buffers,
+      vols,
+      pans,
+      semitones: shifted ? semitones : 0
+    }
+    if (mode === 'mixed') await exportMixed(opts)
+    else await exportSeparate({ ...opts, includeMix: selected.has(MIX_ID) })
+  }
 
   const applyPreset = (p: PresetId): void => {
     setPreset(p)
@@ -393,6 +415,8 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // the dialog's buttons and checkboxes own Space and the number keys
+      if (exportOpen) return
       if (e.target instanceof HTMLInputElement) return
       if (e.code === 'Space') {
         e.preventDefault()
@@ -411,7 +435,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [togglePlay, toggleMute, stemMeta, seekTo, decoding, decodeError])
+  }, [togglePlay, toggleMute, stemMeta, seekTo, decoding, decodeError, exportOpen])
 
   const toggleSolo = (id: StemId): void => {
     setPreset('custom')
@@ -497,12 +521,12 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
               <div className="flex items-center gap-3">
                 <button
-                  // temporary: Task 4 replaces this with the Export dialog
-                  disabled
+                  onClick={() => setExportOpen(true)}
+                  disabled={decoding || !!decodeError || stemMeta.length === 0}
                   className="no-drag glass rounded-xl px-5 py-3 text-[13px] font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-2 disabled:opacity-40"
                 >
                   <DownloadIcon className="w-4 h-4" />
-                  Export everything
+                  Export
                 </button>
                 {youtubeUrl && (
                   <button
@@ -599,6 +623,16 @@ export function Player({ song, settings }: Props): React.ReactElement {
           </div>
         </div>
       </div>
+      {exportOpen && (
+        <ExportDialog
+          stems={stemMeta}
+          initial={initialSelection(stemMeta.map((s) => s.id), mutes, solos)}
+          semitones={semitones}
+          originalKey={songKey?.override ?? songKey?.detected ?? null}
+          onClose={() => setExportOpen(false)}
+          onExport={runExport}
+        />
+      )}
     </div>
   )
 }
