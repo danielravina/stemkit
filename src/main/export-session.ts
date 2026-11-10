@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import { writeFile, rm } from 'fs/promises'
-import { dirname, join, parse } from 'path'
+import { dirname, join } from 'path'
 import { sanitizeName } from './library'
 
 // No Electron here on purpose: the dialogs live in the IPC handlers, so this
@@ -29,8 +29,11 @@ export async function writeToSession(
   let dest: string
   if (session.kind === 'file') {
     if (fileName !== null) throw new Error('A single-file export takes no file name')
-    const p = parse(session.path)
-    dest = join(p.dir, `${p.name}.${ext}`)
+    // only a real audio extension is swapped: a title like "Mr. Brightside"
+    // has a dot that path.parse would take for one and cut the name there
+    dest = /\.(wav|m4a)$/i.test(session.path)
+      ? session.path.replace(/\.(wav|m4a)$/i, `.${ext}`)
+      : `${session.path}.${ext}`
   } else {
     if (fileName === null) throw new Error('A folder export needs a file name')
     dest = join(session.path, `${sanitizeName(fileName)}.${ext}`)
@@ -44,6 +47,10 @@ export async function writeToSession(
   try {
     await writeFile(tmp, wav)
     await transcode(tmp, dest)
+  } catch (err) {
+    // a transcoder that dies mid-write leaves a truncated file the user would take for the export
+    await rm(dest, { force: true })
+    throw err
   } finally {
     await rm(tmp, { force: true })
   }

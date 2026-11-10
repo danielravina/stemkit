@@ -1,7 +1,7 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerTsHooks } from './helpers/ts-resolve.mjs'
-import { mkdtempSync, readFileSync, existsSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, existsSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -66,4 +66,36 @@ test('the format pinned at begin decides the output, not the caller', async () =
   // a stray 5th argument (old signature) must not switch the format
   const out = await writeToSession(token, 'a', wav, noTranscode, 'aac')
   assert.equal(out, join(dir, 'a.wav'))
+})
+
+test('file session appends the extension when the name has dots but no audio extension', async () => {
+  const dir = mkdtempSync(join(root, 'dots-'))
+  const token = openSession('file', join(dir, 'Mr. Brightside - drums'), 'wav')
+  const out = await writeToSession(token, null, wav, noTranscode)
+  assert.equal(out, join(dir, 'Mr. Brightside - drums.wav'))
+  closeSession(token)
+})
+
+test('file session replaces a known audio extension whatever its case', async () => {
+  const dir = mkdtempSync(join(root, 'case-'))
+  const upper = openSession('file', join(dir, 'song.M4A'), 'wav')
+  assert.equal(await writeToSession(upper, null, wav, noTranscode), join(dir, 'song.wav'))
+  const same = openSession('file', join(dir, 'take.wav'), 'wav')
+  assert.equal(await writeToSession(same, null, wav, noTranscode), join(dir, 'take.wav'))
+  closeSession(upper)
+  closeSession(same)
+})
+
+test('failing transcode removes a partial destination file', async () => {
+  const dir = mkdtempSync(join(root, 'partial-'))
+  const token = openSession('file', join(dir, 'song.m4a'), 'aac')
+  await assert.rejects(
+    writeToSession(token, null, wav, async (_src, dest) => {
+      writeFileSync(dest, 'half an m4a')
+      throw new Error('ffmpeg died')
+    }),
+    /ffmpeg died/
+  )
+  assert.deepEqual(readdirSync(dir), [])
+  closeSession(token)
 })
