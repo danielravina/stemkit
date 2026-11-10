@@ -5,14 +5,12 @@ import { KEY_NAMES } from '../../../shared/keys'
 interface Props {
   songKey: SongKey | undefined
   onOverride: (key: string | null) => void
-  // second line, rendered under the label (transpose controls arrive in a later PR)
-  children?: React.ReactNode
 }
 
 const MAJORS = KEY_NAMES.slice(0, 12)
 const MINORS = KEY_NAMES.slice(12)
 
-export function KeyControl({ songKey, onOverride, children }: Props): React.ReactElement {
+export function KeyControl({ songKey, onOverride }: Props): React.ReactElement {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -67,21 +65,20 @@ export function KeyControl({ songKey, onOverride, children }: Props): React.Reac
           <span title="Set manually" className="w-1.5 h-1.5 rounded-full bg-violet-400" />
         )}
       </button>
-      {children}
       {open && (
         <div
           role="dialog"
           aria-label="Original key"
           className="no-drag absolute bottom-full right-0 mb-2 z-50 w-64 p-2 rounded-xl bg-[#16151d] border border-white/[0.08] shadow-2xl"
         >
-          {songKey?.detected && (
+          {(songKey?.detected || override) && (
             <button
               onClick={() => choose(null)}
               className={`w-full text-left px-2 py-1 mb-1 rounded-md text-[12px] transition-colors ${
                 !override ? 'text-white bg-white/10' : 'text-white/70 hover:bg-white/10 hover:text-white'
               }`}
             >
-              Auto ({songKey.detected})
+              Auto ({songKey?.detected ?? '?'})
             </button>
           )}
           <div className="grid grid-cols-6 gap-0.5">{MAJORS.map(keyButton)}</div>

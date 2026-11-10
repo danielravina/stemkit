@@ -128,17 +128,20 @@ export function Player({ song, settings }: Props): React.ReactElement {
 
     let cancelled = false
     setSongKey(song.key)
-    if (song.key === undefined) {
-      window.stemkit
-        .detectKey(song.videoId)
-        .then((k) => {
-          if (!cancelled) setSongKey(k)
-        })
-        .catch(() => {
-          // detection is best-effort: show '?' rather than analysing forever
-          if (!cancelled) setSongKey({ detected: null })
-        })
-    }
+    // the songs list is not reloaded after detection or an override, so
+    // song.key can be stale: detectKey returns the stored key cheaply and
+    // only detects when none exists
+    const hadKey = song.key !== undefined
+    window.stemkit
+      .detectKey(song.videoId)
+      .then((k) => {
+        if (!cancelled) setSongKey(k)
+      })
+      .catch(() => {
+        // detection is best-effort: show '?' rather than analysing forever,
+        // but keep a key we already had
+        if (!cancelled && !hadKey) setSongKey({ detected: null })
+      })
     const flushPan = (): void => {
       if (panSaveTimer.current !== null) clearTimeout(panSaveTimer.current)
       panSaveTimer.current = null

@@ -33,7 +33,7 @@ const hooks = registerHooks({
   }
 })
 const { saveSongs, loadSongs, patchSongKey, setKeyOverride } = await import(src('library.ts'))
-const { keyInputs, detectOnce } = await import(src('keydetect.ts'))
+const { keyInputs, detectOnce, withOverride } = await import(src('keydetect.ts'))
 hooks.deregister()
 
 const mk = (id) => ({ videoId: id, stems: ['vocals', 'drums', 'bass'], title: id, duration: 10, addedAt: 1 })
@@ -112,4 +112,10 @@ test('an override on a keyless song marks it attempted', async () => {
   let calls = 0
   await detectOnce('g', async () => (calls++, { detected: 'C' }))
   assert.equal(calls, 0)
+})
+
+test('withOverride carries a previous override onto a fresh detection', () => {
+  assert.deepEqual(withOverride({ detected: 'C' }, { detected: 'G', override: 'Am' }), { detected: 'C', override: 'Am' })
+  assert.deepEqual(withOverride({ detected: 'C' }, { detected: 'G' }), { detected: 'C' })
+  assert.deepEqual(withOverride({ detected: 'C' }, undefined), { detected: 'C' })
 })

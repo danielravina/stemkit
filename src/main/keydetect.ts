@@ -53,9 +53,10 @@ export function runKeyScript(inputs: string[]): Promise<SongKey> {
             Number.isInteger(msg.tonic) &&
             (msg.mode === 'major' || msg.mode === 'minor')
           ) {
+            const confidence = Number(msg.confidence)
             return done({
               detected: keyName(msg.tonic, msg.mode as KeyMode),
-              confidence: Number(msg.confidence)
+              ...(Number.isFinite(confidence) ? { confidence } : {})
             })
           }
         } catch {
@@ -65,6 +66,11 @@ export function runKeyScript(inputs: string[]): Promise<SongKey> {
       done({ detected: null })
     })
   })
+}
+
+// a fresh detection must not drop the user's manual correction
+export function withOverride(key: SongKey, previous: SongKey | undefined): SongKey {
+  return previous?.override ? { ...key, override: previous.override } : key
 }
 
 const inflight = new Map<string, Promise<SongKey>>()
@@ -84,7 +90,7 @@ export function detectOnce(videoId: string, run = runKeyScript): Promise<SongKey
       // keep a user override that was set before detection finished; a
       // failure is stored too so it is not retried
       const current = loadSongs().find((s) => s.videoId === videoId)?.key
-      const key: SongKey = current?.override ? { ...result, override: current.override } : result
+      const key = withOverride(result, current)
       patchSongKey(videoId, key)
       return key
     } finally {

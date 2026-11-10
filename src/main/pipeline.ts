@@ -36,7 +36,7 @@ import { parseVideoId } from '../shared/url'
 import { AUDIO_EXTENSIONS, audioExtension, localSongId } from '../shared/local'
 import { cacheThumbnail } from './thumbs'
 import { acquireSeparation } from './separation-slots'
-import { keyInputs, runKeyScript } from './keydetect'
+import { keyInputs, runKeyScript, withOverride } from './keydetect'
 
 interface ActiveJob {
   videoId: string
@@ -187,6 +187,8 @@ function finalizeJob(
 ): void {
   progress(job, 'finalize', 100, 'Adding to library')
   const took = Math.round((Date.now() - info.startedAt) / 1000)
+  // re-splitting must not lose a key the user corrected by hand
+  const previousKey = loadSongs().find((s) => s.videoId === job.videoId)?.key
   const songs = upsertSong({
     videoId: job.videoId,
     title: info.title,
@@ -196,7 +198,7 @@ function finalizeJob(
     stems: producedStems,
     took,
     source: info.source,
-    key
+    key: withOverride(key, previousKey)
   })
   send({ kind: 'done', data: { videoId: job.videoId, song: songs[0] } })
 
