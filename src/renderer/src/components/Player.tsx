@@ -90,6 +90,8 @@ export function Player({ song, settings }: Props): React.ReactElement {
   const [songKey, setSongKey] = useState<SongKey | undefined>(song.key)
   const songIdRef = useRef(song.videoId)
   songIdRef.current = song.videoId
+  const [semitones, setSemitones] = useState(0)
+  const [pitchError, setPitchError] = useState<string | null>(null)
   const [preset, setPreset] = useState<PresetId | 'custom'>('all')
 
   const stemMeta = useMemo(() => buildStemMeta(Object.keys(buffers) as StemId[]), [buffers])
@@ -125,8 +127,23 @@ export function Player({ song, settings }: Props): React.ReactElement {
     setSolos(new Set())
     setPreset('all')
     engine.stopAll()
+    // engine.pitch() reads 0 until playback starts, so the UI keeps its own value
+    setSemitones(0)
+    setPitchError(null)
+    void engine.setPitch(0)
 
     let cancelled = false
+    window.stemkit
+      .getPitch(song.videoId)
+      .catch(() => 0)
+      .then((n) => {
+        if (cancelled) return
+        setSemitones(n)
+        return engine.setPitch(n).then(() => {
+          if (!cancelled) setPitchError(engine.pitchError)
+        })
+      })
+      .catch(() => {})
     setSongKey(song.key)
     // the songs list is not reloaded after detection or an override, so
     // song.key can be stale: detectKey returns the stored key cheaply and
@@ -514,6 +531,18 @@ export function Player({ song, settings }: Props): React.ReactElement {
             master={master}
             onMaster={setMaster}
             songKey={songKey}
+            semitones={semitones}
+            onSemitones={(n) => {
+              const id = song.videoId
+              setSemitones(n)
+              void engine
+                .setPitch(n)
+                .catch(() => {})
+                .then(() => {
+                  if (songIdRef.current === id) setPitchError(engine.pitchError)
+                })
+              void window.stemkit.setPitch(id, n).catch(() => {})
+            }}
             onKeyOverride={(key) => {
               const id = song.videoId
               window.stemkit
@@ -541,6 +570,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
           />
 
           {panError && <p role="status" className="mt-3 text-xs text-amber-300">{panError}</p>}
+          {pitchError && <p role="status" className="mt-3 text-xs text-amber-300">{pitchError}</p>}
           <div className="mt-4 space-y-2">
             {decoding
               ? [...Array(4)].map((_, i) => (

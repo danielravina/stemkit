@@ -7,12 +7,14 @@ interface Props {
   onOverride: (key: string | null) => void
   // retry a detection that failed (shown as ?)
   onRedetect: () => void
+  // rendered under the label (the semitone stepper)
+  children?: React.ReactNode
 }
 
 const MAJORS = KEY_NAMES.slice(0, 12)
 const MINORS = KEY_NAMES.slice(12)
 
-export function KeyControl({ songKey, onOverride, onRedetect }: Props): React.ReactElement {
+export function KeyControl({ songKey, onOverride, onRedetect, children }: Props): React.ReactElement {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -53,7 +55,7 @@ export function KeyControl({ songKey, onOverride, onRedetect }: Props): React.Re
   )
 
   return (
-    <div ref={rootRef} className="relative flex flex-col items-start gap-1">
+    <div ref={rootRef} className="relative flex flex-col items-center gap-1">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="dialog"
@@ -98,6 +100,7 @@ export function KeyControl({ songKey, onOverride, onRedetect }: Props): React.Re
           <div className="grid grid-cols-6 gap-0.5 mt-1">{MINORS.map(keyButton)}</div>
         </div>
       )}
+      {children}
     </div>
   )
 }
