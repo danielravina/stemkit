@@ -5,7 +5,8 @@ import {
   initialSelection,
   canExport,
   mixedBaseName,
-  separateFolderName
+  separateFolderName,
+  originalMixName
 } from '../src/shared/export-rules.ts'
 
 const ALL = ['vocals', 'drums', 'bass', 'other']
@@ -24,11 +25,12 @@ test('initialSelection never includes the mix id', () => {
   assert.equal(initialSelection([...ALL, MIX_ID], new Set(), new Set()).has(MIX_ID), false)
 })
 
-test('canExport needs at least one stem; the mix only counts when separate', () => {
-  assert.equal(canExport(new Set(), 'mixed'), false)
-  assert.equal(canExport(new Set([MIX_ID]), 'mixed'), false)
-  assert.equal(canExport(new Set([MIX_ID]), 'separate'), true)
-  assert.equal(canExport(new Set(['drums']), 'mixed'), true)
+test('canExport needs the original mix or at least one stem, in either mode', () => {
+  for (const mode of ['mixed', 'separate']) {
+    assert.equal(canExport(new Set(), mode), false)
+    assert.equal(canExport(new Set([MIX_ID]), mode), true)
+    assert.equal(canExport(new Set(['drums']), mode), true)
+  }
 })
 
 test('mixedBaseName calls everything-but-vocals "instrumental"', () => {
@@ -67,4 +69,15 @@ test('the suffix survives even with every stem of a 6-stem song checked and a sh
   const name = mixedBaseName('y'.repeat(200), six, six, -6)
   assert.ok(name.length <= 120, `length ${name.length}`)
   assert.ok(name.endsWith(' - vocals+drums+bass+guitar+piano+other (-6)'))
+})
+
+test('originalMixName is the title plus the shift suffix', () => {
+  assert.equal(originalMixName('Song', 0), 'Song')
+  assert.equal(originalMixName('Song', -3), 'Song (-3)')
+  assert.equal(originalMixName('Song', 2), 'Song (+2)')
+})
+
+test('originalMixName cuts long titles so the shift suffix survives', () => {
+  assert.equal(originalMixName('z'.repeat(200), -3), `${'z'.repeat(115)} (-3)`)
+  assert.equal(originalMixName('z'.repeat(200), 0), 'z'.repeat(120))
 })

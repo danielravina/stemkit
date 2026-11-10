@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { MIX_ID, canExport, type ExportMode } from '../../../shared/export-rules'
 import { formatShift, transposeKey } from '../../../shared/keys'
+import type { ExportProgress, OnProgress } from '../lib/exporter'
 import type { StemMeta } from '../lib/stems'
 import { XIcon } from './Icons'
 
@@ -11,7 +12,12 @@ interface Props {
   originalKey: string | null
   onClose(): void
   // resolves false when the user cancelled the save/folder picker
-  onExport(mode: ExportMode, selected: Set<string>, shifted: boolean): Promise<boolean>
+  onExport(
+    mode: ExportMode,
+    selected: Set<string>,
+    shifted: boolean,
+    onProgress: OnProgress
+  ): Promise<boolean>
 }
 
 export function ExportDialog({
@@ -26,8 +32,10 @@ export function ExportDialog({
   const [shifted, setShifted] = useState(true)
   const [busy, setBusy] = useState<ExportMode | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // hovering or focusing "Export mixed" previews that the original mix is left out
-  const [mixedHover, setMixedHover] = useState(false)
+  const [progress, setProgress] = useState<ExportProgress | null>(null)
+  // the stems checked right before "Original mix", given back when it is unchecked
+  const [stemsBeforeMix, setStemsBeforeMix] = useState<Set<string>>(() => new Set())
+  const mixChecked = selected.has(MIX_ID)
   const dialogRef = useRef<HTMLDivElement>(null)
 
   // a render can take a while and the session must reach exportEnd, so the
@@ -57,17 +65,31 @@ export function ExportDialog({
     })
   }
 
+  // the original mix already holds every stem, so it is exported on its own
+  const toggleMix = (): void => {
+    if (mixChecked) {
+      setSelected(new Set(stemsBeforeMix))
+    } else {
+      setStemsBeforeMix(selected)
+      setSelected(new Set([MIX_ID]))
+    }
+  }
+
   const run = async (mode: ExportMode): Promise<void> => {
     setBusy(mode)
     setError(null)
+    setProgress(null)
     try {
       // a cancelled picker keeps the dialog and its checkboxes for another try
-      if (await onExport(mode, selected, semitones !== 0 && shifted)) onClose()
-      else setBusy(null)
+      if (await onExport(mode, selected, semitones !== 0 && shifted, setProgress)) {
+        onClose()
+        return
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
-      setBusy(null)
     }
+    setBusy(null)
+    setProgress(null)
   }
 
   const shiftedKey = originalKey ? transposeKey(originalKey, semitones) : null
@@ -75,10 +97,12 @@ export function ExportDialog({
   const shiftedLabel = shiftedKey
     ? `Shifted (${shiftedKey} ${formatShift(semitones)})`
     : `Shifted (${formatShift(semitones)})`
-  const mixDimmed = mixedHover || busy === 'mixed'
+  const percent = progress ? Math.round(progress.fraction * 100) : 0
 
-  const rowClass =
-    'flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] hover:bg-white/[0.04] transition-colors cursor-pointer'
+  const rowClass = (off: boolean): string =>
+    `flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors ${
+      off ? 'opacity-40 cursor-not-allowed' : 'hover:bg-white/[0.04] cursor-pointer'
+    }`
   const buttonClass =
     'no-drag flex-1 rounded-xl px-4 py-2.5 text-[13px] font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
 
@@ -114,31 +138,38 @@ export function ExportDialog({
         <div className="px-5 py-4 space-y-4">
           <fieldset disabled={busy !== null} className="space-y-0.5">
             <legend className="sr-only">Tracks</legend>
+            <label className={rowClass(false)}>
+              <input
+                type="checkbox"
+                checked={mixChecked}
+                onChange={toggleMix}
+                aria-describedby={mixChecked ? 'export-mix-note' : undefined}
+                className="w-4 h-4 accent-violet-500"
+              />
+              <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-white/40" />
+              <span className="text-white/80">Original mix</span>
+            </label>
+            {mixChecked && (
+              <p id="export-mix-note" className="pl-10 pb-1 text-[11px] text-white/50">
+                Contains every stem
+              </p>
+            )}
+            <div role="separator" className="py-1.5">
+              <div className="border-t border-white/[0.07]" />
+            </div>
             {stems.map((meta) => (
-              <label key={meta.id} className={rowClass}>
+              <label key={meta.id} className={rowClass(mixChecked)}>
                 <input
                   type="checkbox"
                   checked={selected.has(meta.id)}
                   onChange={() => toggle(meta.id)}
-                  className="w-4 h-4 accent-violet-500"
+                  disabled={mixChecked}
+                  className="w-4 h-4 accent-violet-500 disabled:cursor-not-allowed"
                 />
                 <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: meta.color }} />
                 <span className="capitalize text-white/80">{meta.label}</span>
               </label>
             ))}
-            <label className={`${rowClass} ${mixDimmed ? 'opacity-40' : ''}`}>
-              <input
-                type="checkbox"
-                checked={selected.has(MIX_ID)}
-                onChange={() => toggle(MIX_ID)}
-                className="w-4 h-4 accent-violet-500"
-              />
-              <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-white/40" />
-              <span className="text-white/80">Original mix</span>
-              {mixDimmed && (
-                <span className="ml-auto text-[11px] text-white/50">already contains every stem</span>
-              )}
-            </label>
           </fieldset>
 
           {semitones !== 0 && (
@@ -177,24 +208,40 @@ export function ExportDialog({
             </p>
           )}
 
-          <div className="flex gap-2 pt-1">
-            {/* hover lives on a wrapper: disabled buttons get no mouse events,
-                and that is exactly when the hint explains why */}
-            <span
-              className="flex-1 flex"
-              onMouseEnter={() => setMixedHover(true)}
-              onMouseLeave={() => setMixedHover(false)}
-            >
-              <button
-                onClick={() => void run('mixed')}
-                onFocus={() => setMixedHover(true)}
-                onBlur={() => setMixedHover(false)}
-                disabled={busy !== null || !canExport(selected, 'mixed')}
-                className={`${buttonClass} bg-violet-500 text-white hover:bg-violet-400`}
+          {busy !== null && progress && (
+            <div className="space-y-1.5" aria-live="polite">
+              <div className="flex items-baseline justify-between gap-3 text-[11.5px] text-white/60">
+                <span className="truncate">{progress.label}</span>
+                {progress.steps > 1 && (
+                  <span className="shrink-0 tabular-nums text-white/40">
+                    {progress.step} of {progress.steps}
+                  </span>
+                )}
+              </div>
+              <div
+                role="progressbar"
+                aria-label="Export progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={percent}
+                className="h-1 rounded-full bg-white/[0.08] overflow-hidden"
               >
-                {busy === 'mixed' ? 'Exporting…' : 'Export mixed'}
-              </button>
-            </span>
+                <div
+                  className="h-full rounded-full bg-violet-500 transition-[width] duration-150 ease-out"
+                  style={{ width: `${percent}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              onClick={() => void run('mixed')}
+              disabled={busy !== null || !canExport(selected, 'mixed')}
+              className={`${buttonClass} bg-violet-500 text-white hover:bg-violet-400`}
+            >
+              {busy === 'mixed' ? 'Exporting…' : 'Export mixed'}
+            </button>
             <button
               onClick={() => void run('separate')}
               disabled={busy !== null || !canExport(selected, 'separate')}

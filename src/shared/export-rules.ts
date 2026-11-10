@@ -18,9 +18,9 @@ export function initialSelection(
   )
 }
 
-export function canExport(selected: Set<string>, mode: ExportMode): boolean {
-  // a mixed file is built from stems only, so the original mix does not count there
-  if (mode === 'mixed') return [...selected].some((id) => id !== MIX_ID)
+// The original mix is exclusive: when it is checked, both modes export that one
+// file, so the mode no longer changes what counts.
+export function canExport(selected: Set<string>, _mode: ExportMode): boolean {
   return selected.size > 0
 }
 
@@ -56,5 +56,10 @@ export function mixedBaseName(
 }
 
 export function separateFolderName(title: string, semitones: number): string {
+  return withSuffix(title, shiftSuffix(semitones))
+}
+
+// the original song as one file: nothing to list, only the shift tells two exports apart
+export function originalMixName(title: string, semitones: number): string {
   return withSuffix(title, shiftSuffix(semitones))
 }

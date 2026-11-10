@@ -9,7 +9,7 @@ import { StemLane } from './StemLane'
 import { Transport, type PresetId } from './Transport'
 import { DownloadIcon } from './Icons'
 import { ExportDialog } from './ExportDialog'
-import { exportMixed, exportSeparate } from '../lib/exporter'
+import { exportMixed, exportOriginal, exportSeparate, type OnProgress } from '../lib/exporter'
 import { MIX_ID, initialSelection, type ExportMode } from '../../../shared/export-rules'
 
 // number keys 1-6 mute the lane shown in that position, top to bottom
@@ -369,7 +369,8 @@ export function Player({ song, settings }: Props): React.ReactElement {
   const runExport = async (
     mode: ExportMode,
     selected: Set<string>,
-    shifted: boolean
+    shifted: boolean,
+    onProgress: OnProgress
   ): Promise<boolean> => {
     const opts = {
       videoId: song.videoId,
@@ -380,14 +381,17 @@ export function Player({ song, settings }: Props): React.ReactElement {
       pans,
       semitones: shifted ? semitones : 0
     }
-    // null means the user cancelled the picker
-    if (mode === 'mixed') {
-      const path = await exportMixed(opts)
+    // null means the user cancelled the picker. The original mix is exclusive
+    // in the dialog, so either button exports just that one file.
+    if (mode === 'mixed' || selected.has(MIX_ID)) {
+      const path = selected.has(MIX_ID)
+        ? await exportOriginal(opts, onProgress)
+        : await exportMixed(opts, onProgress)
       if (path === null) return false
       setExportNotice({ text: `Exported to ${path}`, path })
       return true
     }
-    const result = await exportSeparate({ ...opts, includeMix: selected.has(MIX_ID) })
+    const result = await exportSeparate(opts, onProgress)
     if (result === null) return false
     const files = result.count === 1 ? '1 file' : `${result.count} files`
     setExportNotice({ text: `Exported ${files} to ${result.path}`, path: result.path })
