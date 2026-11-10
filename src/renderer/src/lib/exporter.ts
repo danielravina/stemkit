@@ -4,7 +4,6 @@ import { MIX_ID, mixedBaseName, separateFolderName } from '../../../shared/expor
 import { limitPeak, renderLength, trimLatency } from './render-math'
 import { createPitchShifter } from './pitch'
 import type { PitchShifter, ShifterFactory } from './pitch'
-import { decodePayload, type BufferMap } from './engine'
 
 const SAMPLE_RATE = 44100
 
@@ -76,18 +75,31 @@ export interface ExportOptions {
   // every stem id of the song, in display order (never MIX_ID)
   stems: string[]
   selected: string[]
-  buffers: BufferMap
   vols: Partial<Record<StemId, number>>
   pans: StemPanMap
   // 0 exports at the original pitch
   semitones: number
 }
 
-function stemSource(opts: ExportOptions, id: string): RenderSource {
-  const buffer = opts.buffers[id as StemId]
-  if (!buffer) throw new Error(`Missing audio for ${id}`)
+// The player's buffers come from an AudioContext at the device rate (often
+// 48 kHz), so rendering those at 44.1 kHz would resample twice. Stems are
+// stored at 44.1 kHz: decoding the raw file at that rate keeps every sample.
+function decodeAtExportRate(bytes: Uint8Array): Promise<AudioBuffer> {
+  // decodeAudioData detaches the bytes, which are a throwaway IPC copy
+  return new OfflineAudioContext(2, 1, SAMPLE_RATE).decodeAudioData(bytes.buffer as ArrayBuffer)
+}
+
+async function stemSource(
+  opts: ExportOptions,
+  payload: Record<string, Uint8Array>,
+  id: string
+): Promise<RenderSource> {
+  const bytes = payload[id]
+  if (!bytes) throw new Error(`Missing audio for ${id}`)
+  // drop the reference so the bytes can go once decoded
+  delete payload[id]
   return {
-    buffer,
+    buffer: await decodeAtExportRate(bytes),
     gain: opts.vols[id as StemId] ?? 1,
     pan: opts.pans[id as StemId] ?? 0
   }
@@ -107,10 +119,10 @@ export async function exportMixed(opts: ExportOptions): Promise<string | null> {
   )
   if (!session) return null
   try {
-    const channels = await renderOffline(
-      ids.map((id) => stemSource(opts, id)),
-      opts.semitones
-    )
+    const payload = await window.stemkit.getBuffers(opts.videoId)
+    const sources: RenderSource[] = []
+    for (const id of ids) sources.push(await stemSource(opts, payload, id))
+    const channels = await renderOffline(sources, opts.semitones)
     return await window.stemkit.exportWrite(session.token, null, encodeWavF32(channels, SAMPLE_RATE))
   } finally {
     await window.stemkit.exportEnd(session.token)
@@ -122,6 +134,10 @@ export async function exportSeparate(
 ): Promise<{ path: string; count: number } | null> {
   const ids = chosenStems(opts)
   if (ids.length === 0 && !opts.includeMix) throw new Error('Select at least one stem')
+  // checked before the picker: a missing mix found after the stems would
+  // leave a half-finished folder behind
+  const mix = opts.includeMix ? await window.stemkit.getMix(opts.videoId) : null
+  if (opts.includeMix && !mix) throw new Error('This song has no original mix to export')
   const session = await window.stemkit.exportBegin(
     'folder',
     separateFolderName(opts.title, opts.semitones)
@@ -129,19 +145,16 @@ export async function exportSeparate(
   if (!session) return null
   let count = 0
   try {
-    // one at a time: every render holds a full-length stereo copy in memory
+    const payload = ids.length > 0 ? await window.stemkit.getBuffers(opts.videoId) : {}
+    // one at a time: every decode and render holds a full-length stereo copy in memory
     for (const id of ids) {
-      const channels = await renderOffline([stemSource(opts, id)], opts.semitones)
+      const channels = await renderOffline([await stemSource(opts, payload, id)], opts.semitones)
       await window.stemkit.exportWrite(session.token, id, encodeWavF32(channels, SAMPLE_RATE))
       count++
     }
-    if (opts.includeMix) {
-      const payload = await window.stemkit.getMix(opts.videoId)
-      if (!payload) throw new Error('This song has no original mix to export')
-      const decoded = await decodePayload({ [MIX_ID]: payload })
-      const buffer = decoded[MIX_ID as StemId]
-      if (!buffer) throw new Error('Could not decode the original mix')
+    if (mix) {
       // the original mix ignores the mixer: pitch only, at full volume
+      const buffer = await decodeAtExportRate(mix)
       const channels = await renderOffline([{ buffer, gain: 1, pan: 0 }], opts.semitones)
       await window.stemkit.exportWrite(session.token, opts.title, encodeWavF32(channels, SAMPLE_RATE))
       count++

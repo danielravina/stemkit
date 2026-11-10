@@ -373,7 +373,6 @@ export function Player({ song, settings }: Props): React.ReactElement {
       title: song.title,
       stems: stemMeta.map((s) => s.id),
       selected: [...selected],
-      buffers,
       vols,
       pans,
       semitones: shifted ? semitones : 0
