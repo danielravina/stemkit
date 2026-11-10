@@ -127,7 +127,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
     setSolos(new Set())
     setPreset('all')
     engine.stopAll()
-    // engine.pitch() reads 0 until playback starts, so the UI keeps its own value
+    // the engine applies pitch lazily, so the UI keeps its own value
     setSemitones(0)
     setPitchError(null)
     void engine.setPitch(0)
