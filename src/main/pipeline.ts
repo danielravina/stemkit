@@ -2,7 +2,6 @@ import { spawn, type ChildProcess } from 'child_process'
 import { createInterface } from 'readline'
 import { readdirSync, mkdirSync, rmSync, statSync } from 'fs'
 import { basename, join } from 'path'
-import { totalmem } from 'os'
 import { BrowserWindow } from 'electron'
 import {
   venvPython,
@@ -31,11 +30,13 @@ import {
   loadSongs,
   wavDuration
 } from './library'
-import type { JobEvent, JobStage } from '../shared/types'
+import type { JobEvent, JobStage, SongKey } from '../shared/types'
 import { MODEL_DEFAULT, MODEL_EXTENDED } from '../shared/types'
 import { parseVideoId } from '../shared/url'
 import { AUDIO_EXTENSIONS, audioExtension, localSongId } from '../shared/local'
 import { cacheThumbnail } from './thumbs'
+import { acquireSeparation } from './separation-slots'
+import { keyInputs, runKeyScript } from './keydetect'
 
 interface ActiveJob {
   videoId: string
@@ -46,33 +47,6 @@ interface ActiveJob {
 }
 
 const jobs = new Map<string, ActiveJob>()
-
-/* One engine process peaks at a few GB (weights + the whole song on the
-   device), so two at once needs real headroom: below 16GB of RAM a second
-   concurrent split is what gets the pair killed, which looks like a random
-   failure on the second song. Machines with less run one at a time and the
-   rest queue. */
-const MAX_CONCURRENT_SEPARATIONS = totalmem() >= 16 * 1024 ** 3 ? 2 : 1
-let activeSeparations = 0
-const separationWaiters: Array<() => void> = []
-
-function acquireSeparation(): Promise<() => void> {
-  if (activeSeparations < MAX_CONCURRENT_SEPARATIONS) {
-    activeSeparations++
-    return Promise.resolve(releaseSeparation)
-  }
-  return new Promise((resolve) => {
-    separationWaiters.push(() => {
-      activeSeparations++
-      resolve(releaseSeparation)
-    })
-  })
-}
-
-function releaseSeparation(): void {
-  activeSeparations--
-  separationWaiters.shift()?.()
-}
 
 function send(ev: JobEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -197,10 +171,22 @@ async function convertToWav(job: ActiveJob, inputPath: string): Promise<void> {
   progress(job, 'convert', 100)
 }
 
+// runKeyScript never throws: a failed detection just leaves the song keyless
+async function detectKey(job: ActiveJob, producedStems: string[]): Promise<SongKey> {
+  progress(job, 'finalize', 100, 'Detecting key')
+  const release = await acquireSeparation()
+  try {
+    return await runKeyScript(keyInputs(job.videoId, producedStems))
+  } finally {
+    release()
+  }
+}
+
 function finalizeJob(
   job: ActiveJob,
   info: { title: string; duration: number; addedAt: number; startedAt: number; source?: 'local' },
-  producedStems: string[]
+  producedStems: string[],
+  key: SongKey
 ): void {
   progress(job, 'finalize', 100, 'Adding to library')
   const took = Math.round((Date.now() - info.startedAt) / 1000)
@@ -212,7 +198,8 @@ function finalizeJob(
     model: job.model,
     stems: producedStems,
     took,
-    source: info.source
+    source: info.source,
+    key
   })
   send({ kind: 'done', data: { videoId: job.videoId, song: songs[0] } })
 
@@ -334,7 +321,9 @@ export async function startJob(
 
     const producedStems = await runSeparation(job, plan, stems)
     if (job.cancelled || !jobs.has(videoId)) return
-    finalizeJob(job, { title: meta!.title, duration: meta!.duration, addedAt, startedAt }, producedStems)
+    const key = await detectKey(job, producedStems)
+    if (job.cancelled || !jobs.has(videoId)) return
+    finalizeJob(job, { title: meta!.title, duration: meta!.duration, addedAt, startedAt }, producedStems, key)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (message !== 'cancelled') {
@@ -399,7 +388,9 @@ export async function startLocalJob(
 
     const producedStems = await runSeparation(job, plan, stems)
     if (job.cancelled || !jobs.has(videoId)) return
-    finalizeJob(job, { title, duration, addedAt, startedAt, source: 'local' }, producedStems)
+    const key = await detectKey(job, producedStems)
+    if (job.cancelled || !jobs.has(videoId)) return
+    finalizeJob(job, { title, duration, addedAt, startedAt, source: 'local' }, producedStems, key)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     if (message !== 'cancelled') {

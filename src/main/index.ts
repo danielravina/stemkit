@@ -31,9 +31,10 @@ import {
 import { loadSettings, saveSettings } from './settings'
 import {
   loadSongs, removeSong, clearLibrary, stemBuffers, stemsDir, stemsFor, sanitizeName,
-  exportStems, transcodeToAac, loadStemPan, saveStemPan
+  exportStems, transcodeToAac, loadStemPan, saveStemPan, setKeyOverride
 } from './library'
 import { AUDIO_EXTENSIONS } from '../shared/local'
+import { detectOnce } from './keydetect'
 import { startJob, startLocalJob, cancelJob, searchYouTube } from './pipeline'
 import { initUpdater } from './updater'
 import { runSmoke } from './smoke'
@@ -234,6 +235,10 @@ app.whenReady().then(async () => {
   ipcMain.handle('library:list', () => loadSongs())
   ipcMain.handle('song:pan:get', (_e, videoId: string) => loadStemPan(videoId))
   ipcMain.handle('song:pan:set', (_e, videoId: string, pans: unknown) => saveStemPan(videoId, pans))
+  ipcMain.handle('song:key:detect', (_e, videoId: string) => detectOnce(videoId))
+  ipcMain.handle('song:key:set', (_e, videoId: string, override: string | null) =>
+    setKeyOverride(videoId, override)
+  )
   ipcMain.handle('library:delete', (_e, videoId: string) => removeSong(videoId))
   ipcMain.handle('library:clear', () => {
     // cancel first: a running job would keep writing into the folder we are
