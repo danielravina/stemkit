@@ -209,3 +209,19 @@ test('pitch set before the audio context exists applies once playback starts', a
   assert.equal(master.outputs[0], calls[0].shifter.input)
   assert.equal(engine.pitch(), -2)
 })
+
+test('a failed load can be retried by pressing again', async () => {
+  const { calls, factory } = fakeFactory()
+  const { engine, master } = playing(factory)
+  const first = engine.setPitch(2)
+  calls[0].reject(new Error('Pitch shifter failed to load'))
+  await first
+  assert.equal(engine.pitchError, 'Pitch shifter failed to load')
+  const second = engine.setPitch(2)
+  assert.equal(calls.length, 2, 'the factory is called again')
+  calls[1].resolve()
+  await second
+  assert.equal(engine.pitchError, null)
+  assert.equal(engine.pitch(), 2)
+  assert.deepEqual(master.outputs, [calls[1].shifter.input])
+})

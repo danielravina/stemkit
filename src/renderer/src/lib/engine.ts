@@ -95,9 +95,13 @@ export class StemEngine {
       return
     }
     let shifter: PitchShifter
+    const load = (this.shifterLoad ??= this.shifterFactory(this.ctx!))
     try {
-      shifter = await (this.shifterLoad ??= this.shifterFactory(this.ctx!))
+      shifter = await load
     } catch (err) {
+      // forget the failed load so the next press retries; overlapping calls
+      // awaiting the same load must not clear a newer attempt
+      if (this.shifterLoad === load) this.shifterLoad = null
       this.pitchError = err instanceof Error ? err.message : String(err)
       this.appliedPitch = 0
       this.route(null)

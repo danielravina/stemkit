@@ -22,13 +22,25 @@ export const createPitchShifter: ShifterFactory = async (ctx) => {
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error('Pitch shifter failed to load')), LOAD_TIMEOUT_MS)
   })
-  let node: Awaited<ReturnType<typeof SignalsmithStretch>>
+  const creating = SignalsmithStretch(ctx)
+  let node: Awaited<typeof creating>
+  let latency: number
   try {
-    node = await Promise.race([SignalsmithStretch(ctx), timeout])
+    ;[node, latency] = await Promise.race([
+      creating.then(async (n) => [n, await n.latency()] as const),
+      timeout
+    ])
+  } catch (err) {
+    // a load that finishes after the timeout would leave an orphan worklet
+    // running; retries make that repeatable, so shut it down when it lands
+    void creating.then((n) => {
+      n.schedule({ active: false })
+      n.disconnect()
+    }, () => {})
+    throw err
   } finally {
     clearTimeout(timer)
   }
-  const latency = await node.latency()
   // Without active: true the node outputs silence
   const apply = (n: number): void =>
     node.schedule({ active: true, semitones: clampPitch(n), formantCompensation: true })
