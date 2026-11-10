@@ -41,9 +41,11 @@ export const createPitchShifter: ShifterFactory = async (ctx) => {
   } finally {
     clearTimeout(timer)
   }
-  // Without active: true the node outputs silence
+  // Without active: true the node outputs silence. Formant compensation stays
+  // off: it is meant for a single voice, and on a full mix it audibly smears
+  // the instruments even a whole tone away (compared by ear on real songs)
   const apply = (n: number): void =>
-    node.schedule({ active: true, semitones: clampPitch(n), formantCompensation: true })
+    node.schedule({ active: true, semitones: clampPitch(n), formantCompensation: false })
   return {
     input: node,
     output: node,
