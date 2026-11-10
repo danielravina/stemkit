@@ -119,7 +119,7 @@ export async function exportMixed(opts: ExportOptions): Promise<string | null> {
   )
   if (!session) return null
   try {
-    const payload = await window.stemkit.getBuffers(opts.videoId)
+    const payload = await window.stemkit.getBuffers(opts.videoId, ids)
     const sources: RenderSource[] = []
     for (const id of ids) sources.push(await stemSource(opts, payload, id))
     const channels = await renderOffline(sources, opts.semitones)
@@ -145,7 +145,7 @@ export async function exportSeparate(
   if (!session) return null
   let count = 0
   try {
-    const payload = ids.length > 0 ? await window.stemkit.getBuffers(opts.videoId) : {}
+    const payload = ids.length > 0 ? await window.stemkit.getBuffers(opts.videoId, ids) : {}
     // one at a time: every decode and render holds a full-length stereo copy in memory
     for (const id of ids) {
       const channels = await renderOffline([await stemSource(opts, payload, id)], opts.semitones)

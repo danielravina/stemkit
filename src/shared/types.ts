@@ -134,7 +134,8 @@ export interface StemKitApi {
   listSongs(): Promise<Song[]>
   deleteSong(videoId: string): Promise<void>
   clearLibrary(): Promise<void>
-  getBuffers(videoId: string): Promise<Record<string, Uint8Array>>
+  // stems: only these (export); omitted = every stem of the song
+  getBuffers(videoId: string, stems?: string[]): Promise<Record<string, Uint8Array>>
   getStemPan(videoId: string): Promise<StemPanMap>
   // force retries a detection that already ran (normally a stored result is final)
   detectKey(videoId: string, force?: boolean): Promise<SongKey>

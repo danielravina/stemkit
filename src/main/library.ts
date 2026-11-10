@@ -149,6 +149,14 @@ export function stemsFor(song?: Song | null): string[] {
   return song?.stems?.length ? song.stems : DEFAULT_STEMS
 }
 
+// the renderer may ask for a subset (export reads only the checked stems);
+// anything not among the song's own stems is dropped, never read from disk
+export function requestedStems(song: Song | null | undefined, requested: unknown): string[] {
+  const all = stemsFor(song)
+  if (!Array.isArray(requested)) return all
+  return all.filter((id) => requested.includes(id))
+}
+
 function panSong(videoId: string): Song {
   const song = loadSongs().find((s) => s.videoId === videoId)
   if (!song || typeof videoId !== 'string' || !/^[\w-]+$/.test(videoId)) {

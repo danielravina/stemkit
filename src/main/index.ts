@@ -30,7 +30,7 @@ import {
 } from './env'
 import { loadSettings, saveSettings } from './settings'
 import {
-  loadSongs, removeSong, clearLibrary, stemBuffers, stemsDir, sanitizeName,
+  loadSongs, removeSong, clearLibrary, stemBuffers, requestedStems, stemsDir, sanitizeName,
   loadMix, transcodeToAac, loadStemPan, saveStemPan, loadPitch, savePitch, setKeyOverride
 } from './library'
 import { AUDIO_EXTENSIONS } from '../shared/local'
@@ -251,9 +251,9 @@ app.whenReady().then(async () => {
     cancelJob()
     clearLibrary()
   })
-  ipcMain.handle('song:buffers', (_e, videoId: string) => {
+  ipcMain.handle('song:buffers', (_e, videoId: string, stems?: unknown) => {
     const song = loadSongs().find((s) => s.videoId === videoId)
-    return stemBuffers(videoId, song?.stems)
+    return stemBuffers(videoId, requestedStems(song, stems))
   })
 
   ipcMain.handle('jobs:start', async (_e, url: string, model?: string, stems?: string[]) => {
@@ -342,8 +342,8 @@ app.whenReady().then(async () => {
     }
   )
   ipcMain.handle('export:end', (_e, token: string) => closeSession(token))
-  ipcMain.handle('export:reveal', (_e, path: string) => {
-    if (!canReveal(String(path))) throw new Error('Not an exported file')
+  ipcMain.handle('export:reveal', (_e, path: unknown) => {
+    if (!canReveal(path)) throw new Error('Not an exported file')
     shell.showItemInFolder(path)
   })
   ipcMain.handle('song:mix', (_e, videoId: string) => loadMix(videoId))

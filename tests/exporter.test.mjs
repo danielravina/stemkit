@@ -49,8 +49,8 @@ beforeEach(() => {
   mixPayload = bytes('mix')
   globalThis.window = {
     stemkit: {
-      getBuffers: async () => {
-        log.push('getBuffers')
+      getBuffers: async (_id, stems) => {
+        log.push(`getBuffers:${stems ? [...stems].sort().join(',') : 'all'}`)
         return { vocals: bytes('vocals'), drums: bytes('drums'), bass: bytes('bass'), other: bytes('other') }
       },
       getMix: async () => {
@@ -104,4 +104,12 @@ test('exportSeparate with a missing original mix fails before opening a session 
     /no original mix/i
   )
   assert.equal(log.some((l) => l.startsWith('begin') || l.startsWith('write')), false)
+})
+
+test('exports only fetch the raw bytes of the checked stems', async () => {
+  await exportMixed({ ...base, selected: ['bass', 'drums'] })
+  assert.ok(log.includes('getBuffers:bass,drums'), log.join(' '))
+  log = []
+  await exportSeparate({ ...base, selected: ['other'], includeMix: false })
+  assert.ok(log.includes('getBuffers:other'), log.join(' '))
 })

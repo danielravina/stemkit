@@ -16,7 +16,7 @@ const api: StemKitApi = {
   listSongs: () => ipcRenderer.invoke('library:list'),
   deleteSong: (videoId) => ipcRenderer.invoke('library:delete', videoId),
   clearLibrary: () => ipcRenderer.invoke('library:clear'),
-  getBuffers: (videoId) => ipcRenderer.invoke('song:buffers', videoId),
+  getBuffers: (videoId, stems) => ipcRenderer.invoke('song:buffers', videoId, stems),
   getStemPan: (videoId) => ipcRenderer.invoke('song:pan:get', videoId),
   detectKey: (videoId, force) => ipcRenderer.invoke('song:key:detect', videoId, force === true),
   setKeyOverride: (videoId, override) => ipcRenderer.invoke('song:key:set', videoId, override),

@@ -9,7 +9,7 @@ const root = mkdtempSync(join(tmpdir(), 'stemkit-pan-'))
 after(() => rmSync(root, { recursive: true, force: true }))
 const libraryUrl = new URL('../src/main/library.ts', import.meta.url).href
 const hooks = registerTsHooks({ stubEnv: `export const userDataDir = () => ${JSON.stringify(root)}` })
-const { saveSongs, loadStemPan, saveStemPan, removeSong } = await import(libraryUrl)
+const { saveSongs, loadStemPan, saveStemPan, removeSong, requestedStems } = await import(libraryUrl)
 hooks.deregister()
 const song = { videoId: 'song-one', stems: ['vocals', 'drums'], title: 'Test', duration: 10, addedAt: 1 }
 
@@ -29,4 +29,12 @@ test('pan persists per song, validates values, handles old/corrupt files, and de
   assert.equal(existsSync(join(root, 'songs', song.videoId)), false)
   assert.throws(() => saveStemPan(song.videoId, { vocals: 1 }), /Unknown song/)
   assert.equal(existsSync(join(root, 'songs', song.videoId)), false)
+})
+
+test('a renderer stem request is narrowed to the song\'s own stems', () => {
+  const song = { videoId: 'x', title: 'X', duration: 1, addedAt: 0, stems: ['vocals', 'drums', 'bass', 'other'] }
+  assert.deepEqual(requestedStems(song, undefined), ['vocals', 'drums', 'bass', 'other'])
+  assert.deepEqual(requestedStems(song, ['bass', 'drums']), ['drums', 'bass'])
+  assert.deepEqual(requestedStems(song, ['../../etc/passwd', 'bass']), ['bass'])
+  assert.deepEqual(requestedStems(song, 'bass'), ['vocals', 'drums', 'bass', 'other'])
 })

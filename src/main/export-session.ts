@@ -13,8 +13,8 @@ const sessions = new Map<string, Session>()
 // export actually wrote this run (the file, or the folder of a separate export)
 const revealable = new Set<string>()
 
-export function canReveal(path: string): boolean {
-  return revealable.has(path)
+export function canReveal(path: unknown): path is string {
+  return typeof path === 'string' && revealable.has(path)
 }
 
 export function openSession(kind: 'file' | 'folder', path: string, format: 'wav' | 'aac'): string {

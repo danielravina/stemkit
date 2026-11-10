@@ -118,3 +118,9 @@ test('only paths written by a session can be revealed', async () => {
   closeSession(file)
   closeSession(folder)
 })
+
+test('reveal refuses anything that is not a plain string path', () => {
+  assert.equal(canReveal(['/x.wav']), false)
+  assert.equal(canReveal(undefined), false)
+  assert.equal(canReveal({ toString: () => '/x.wav' }), false)
+})
