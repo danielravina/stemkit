@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AppSettings, Song, StemId, StemPanMap } from '../../../shared/types'
+import type { AppSettings, Song, SongKey, StemId, StemPanMap } from '../../../shared/types'
 import { engine, decodePayload, type BufferMap } from '../lib/engine'
 import { buildStemMeta } from '../lib/stems'
 import { fmtTime } from '../lib/format'
@@ -87,6 +87,9 @@ export function Player({ song, settings }: Props): React.ReactElement {
   const [mutes, setMutes] = useState<Set<StemId>>(new Set())
   const [solos, setSolos] = useState<Set<StemId>>(new Set())
   const [master, setMaster] = useState(0.9)
+  const [songKey, setSongKey] = useState<SongKey | undefined>(song.key)
+  const songIdRef = useRef(song.videoId)
+  songIdRef.current = song.videoId
   const [preset, setPreset] = useState<PresetId | 'custom'>('all')
 
   const stemMeta = useMemo(() => buildStemMeta(Object.keys(buffers) as StemId[]), [buffers])
@@ -124,6 +127,17 @@ export function Player({ song, settings }: Props): React.ReactElement {
     engine.stopAll()
 
     let cancelled = false
+    setSongKey(song.key)
+    if (song.key === undefined) {
+      window.stemkit
+        .detectKey(song.videoId)
+        .then((k) => {
+          if (!cancelled) setSongKey(k)
+        })
+        .catch(() => {
+          // detection is best-effort; the label falls back to '…'
+        })
+    }
     const flushPan = (): void => {
       if (panSaveTimer.current !== null) clearTimeout(panSaveTimer.current)
       panSaveTimer.current = null
@@ -495,6 +509,16 @@ export function Player({ song, settings }: Props): React.ReactElement {
             onPreset={applyPreset}
             master={master}
             onMaster={setMaster}
+            songKey={songKey}
+            onKeyOverride={(key) => {
+              const id = song.videoId
+              window.stemkit
+                .setKeyOverride(id, key)
+                .then((k) => {
+                  if (songIdRef.current === id) setSongKey(k)
+                })
+                .catch(() => {})
+            }}
             youtubeUrl={youtubeUrl ?? undefined}
           />
 

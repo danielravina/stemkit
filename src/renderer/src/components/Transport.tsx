@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fmtTime } from '../lib/format'
+import type { SongKey } from '../../../shared/types'
+import { KeyControl } from './KeyControl'
 import { PlayIcon, PauseIcon, ExternalIcon } from './Icons'
 
 export type PresetId = 'all' | 'karaoke' | 'acapella' | 'drumnbass'
@@ -21,6 +23,8 @@ interface Props {
   onPreset: (p: PresetId) => void
   master: number
   onMaster: (v: number) => void
+  songKey?: SongKey
+  onKeyOverride?: (key: string | null) => void
   // local-file songs have no video to link out to
   youtubeUrl?: string
 }
@@ -155,6 +159,8 @@ export function Transport({
   onPreset,
   master,
   onMaster,
+  songKey,
+  onKeyOverride,
   youtubeUrl
 }: Props): React.ReactElement {
   // onSeek clamps to the track bounds, so no need to guard here
@@ -216,6 +222,8 @@ export function Transport({
             }}
           />
         </div>
+
+        <KeyControl songKey={songKey} onOverride={onKeyOverride ?? (() => {})} />
 
         {youtubeUrl && (
           <button
