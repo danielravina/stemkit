@@ -1,6 +1,6 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
+import { registerTsHooks } from './helpers/ts-resolve.mjs'
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,23 +8,7 @@ import { join } from 'node:path'
 const root = mkdtempSync(join(tmpdir(), 'stemkit-pitch-'))
 after(() => rmSync(root, { recursive: true, force: true }))
 const libraryUrl = new URL('../src/main/library.ts', import.meta.url).href
-const hooks = registerHooks({
-  resolve(specifier, context, next) {
-    if (context.parentURL === libraryUrl && specifier === './env') {
-      return { shortCircuit: true, url: `data:text/javascript,${encodeURIComponent(`export const userDataDir = () => ${JSON.stringify(root)}`)}` }
-    }
-    if (context.parentURL === libraryUrl && specifier === '../shared/types') {
-      return { shortCircuit: true, url: new URL('../src/shared/types.ts', import.meta.url).href }
-    }
-    if (context.parentURL === libraryUrl && specifier === '../shared/keys') {
-      return { shortCircuit: true, url: new URL('../src/shared/keys.ts', import.meta.url).href }
-    }
-    if (context.parentURL === libraryUrl && specifier === '../shared/pitch-range') {
-      return { shortCircuit: true, url: new URL('../src/shared/pitch-range.ts', import.meta.url).href }
-    }
-    return next(specifier, context)
-  }
-})
+const hooks = registerTsHooks({ stubEnv: `export const userDataDir = () => ${JSON.stringify(root)}` })
 const { saveSongs, loadPitch, savePitch, removeSong } = await import(libraryUrl)
 hooks.deregister()
 const song = { videoId: 'song-one', stems: ['vocals', 'drums'], title: 'Test', duration: 10, addedAt: 1 }

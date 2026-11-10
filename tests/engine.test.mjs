@@ -1,18 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
+import { registerTsHooks } from './helpers/ts-resolve.mjs'
 
-// renderer modules use extensionless relative imports (bundler resolution);
-// node needs the .ts spelled out
-const srcRoot = new URL('../src/', import.meta.url).href
-const hooks = registerHooks({
-  resolve(specifier, context, next) {
-    if (context.parentURL?.startsWith(srcRoot) && specifier.startsWith('.') && !/\.\w+$/.test(specifier)) {
-      return { shortCircuit: true, url: new URL(`${specifier}.ts`, context.parentURL).href }
-    }
-    return next(specifier, context)
-  }
-})
+const hooks = registerTsHooks()
 const { StemEngine } = await import('../src/renderer/src/lib/engine.ts')
 hooks.deregister()
 
