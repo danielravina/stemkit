@@ -6,12 +6,13 @@ import { sanitizeName } from './library'
 // No Electron here on purpose: the dialogs live in the IPC handlers, so this
 // stays testable. The user picks the destination once, then the renderer sends
 // each rendered WAV; main never trusts a path coming from the renderer.
-type Session = { kind: 'file' | 'folder'; path: string }
+// the format is pinned at begin: the dialog already showed that extension to the user
+type Session = { kind: 'file' | 'folder'; path: string; format: 'wav' | 'aac' }
 const sessions = new Map<string, Session>()
 
-export function openSession(kind: 'file' | 'folder', path: string): string {
+export function openSession(kind: 'file' | 'folder', path: string, format: 'wav' | 'aac'): string {
   const token = randomUUID()
-  sessions.set(token, { kind, path })
+  sessions.set(token, { kind, path, format })
   return token
 }
 
@@ -19,11 +20,11 @@ export async function writeToSession(
   token: string,
   fileName: string | null,
   wav: Uint8Array,
-  format: 'wav' | 'aac',
   transcode: (src: string, dest: string) => Promise<void>
 ): Promise<string> {
   const session = sessions.get(token)
   if (!session) throw new Error('Unknown export session')
+  const format = session.format
   const ext = format === 'aac' ? 'm4a' : 'wav'
   let dest: string
   if (session.kind === 'file') {

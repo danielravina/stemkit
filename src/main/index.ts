@@ -319,7 +319,7 @@ app.whenReady().then(async () => {
         filters: [{ name: format === 'aac' ? 'AAC audio' : 'WAV audio', extensions: [ext] }]
       })
       if (result.canceled || !result.filePath) return null
-      return { token: openSession('file', result.filePath), path: result.filePath }
+      return { token: openSession('file', result.filePath, format), path: result.filePath }
     }
     const result = await dialog.showOpenDialog({
       title: 'Choose export folder',
@@ -329,13 +329,12 @@ app.whenReady().then(async () => {
     if (result.canceled || !result.filePaths[0]) return null
     const dir = join(result.filePaths[0], safe)
     mkdirSync(dir, { recursive: true })
-    return { token: openSession('folder', dir), path: dir }
+    return { token: openSession('folder', dir, format), path: dir }
   })
   ipcMain.handle(
     'export:write',
     (_e, token: string, fileName: string | null, wav: Uint8Array) => {
-      const format = loadSettings().exportFormat
-      return writeToSession(token, fileName, wav, format, (src, dest) =>
+      return writeToSession(token, fileName, wav, (src, dest) =>
         transcodeToAac(requireExportFfmpeg(), src, dest)
       )
     }
