@@ -234,6 +234,10 @@ export function ExportDialog({
             </div>
           )}
 
+          {busy === null && !canExport(selected, 'separate') && (
+            <p className="text-[11.5px] text-white/45">Select at least one track to export.</p>
+          )}
+
           <div className="flex gap-2 pt-1">
             <button
               onClick={() => void run('mixed')}

@@ -42,7 +42,7 @@ function scheduleCheckpoints(ctx: OfflineAudioContext, onRender: (fraction: numb
         } catch {
           // ignored on purpose
         }
-        void ctx.resume()
+        ctx.resume().catch(() => {})
       },
       // a rejected checkpoint only means one progress tick fewer
       () => {}
