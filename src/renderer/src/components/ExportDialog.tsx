@@ -10,7 +10,8 @@ interface Props {
   semitones: number
   originalKey: string | null
   onClose(): void
-  onExport(mode: ExportMode, selected: Set<string>, shifted: boolean): Promise<void>
+  // resolves false when the user cancelled the save/folder picker
+  onExport(mode: ExportMode, selected: Set<string>, shifted: boolean): Promise<boolean>
 }
 
 export function ExportDialog({
@@ -60,8 +61,9 @@ export function ExportDialog({
     setBusy(mode)
     setError(null)
     try {
-      await onExport(mode, selected, semitones !== 0 && shifted)
-      onClose()
+      // a cancelled picker keeps the dialog and its checkboxes for another try
+      if (await onExport(mode, selected, semitones !== 0 && shifted)) onClose()
+      else setBusy(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
       setBusy(null)

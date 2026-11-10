@@ -14,16 +14,9 @@ export interface RenderSource {
   pan: number
 }
 
-// The context length depends on the shifter's latency, and the shifter needs a
-// context to exist, so a tiny context that never renders is used to read it
-async function shifterLatency(factory: ShifterFactory): Promise<number> {
-  const probe = await factory(new OfflineAudioContext(2, 1, SAMPLE_RATE))
-  try {
-    return probe.latency
-  } finally {
-    probe.dispose()
-  }
-}
+// The shifter needs a context before its latency is known, so a shifted render
+// gets a fixed pad longer than any latency signalsmith reports (~0.12 s)
+const SHIFT_PAD = SAMPLE_RATE
 
 // Renders the sources through the same per-stem gain → pan chain as the live
 // engine, without the master volume, at 44.1 kHz stereo. The output has the
@@ -38,14 +31,17 @@ export async function renderOffline(
     sources.map((s) => s.buffer.duration),
     SAMPLE_RATE
   )
-  const latencySamples =
-    semitones !== 0 ? Math.ceil((await shifterLatency(factory)) * SAMPLE_RATE) : 0
-  const ctx = new OfflineAudioContext(2, length + latencySamples, SAMPLE_RATE)
+  const ctx = new OfflineAudioContext(2, length + (semitones !== 0 ? SHIFT_PAD : 0), SAMPLE_RATE)
   let shifter: PitchShifter | null = null
+  let latencySamples = 0
   try {
     let target: AudioNode = ctx.destination
     if (semitones !== 0) {
       shifter = await factory(ctx)
+      if (shifter.latency >= SHIFT_PAD / SAMPLE_RATE) {
+        throw new Error(`Pitch shifter latency too large (${shifter.latency} s)`)
+      }
+      latencySamples = Math.ceil(shifter.latency * SAMPLE_RATE)
       shifter.setSemitones(semitones)
       shifter.output.connect(ctx.destination)
       target = shifter.input

@@ -367,7 +367,7 @@ export function Player({ song, settings }: Props): React.ReactElement {
     mode: ExportMode,
     selected: Set<string>,
     shifted: boolean
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const opts = {
       videoId: song.videoId,
       title: song.title,
@@ -378,8 +378,9 @@ export function Player({ song, settings }: Props): React.ReactElement {
       pans,
       semitones: shifted ? semitones : 0
     }
-    if (mode === 'mixed') await exportMixed(opts)
-    else await exportSeparate({ ...opts, includeMix: selected.has(MIX_ID) })
+    // null means the user cancelled the picker
+    if (mode === 'mixed') return (await exportMixed(opts)) !== null
+    return (await exportSeparate({ ...opts, includeMix: selected.has(MIX_ID) })) !== null
   }
 
   const applyPreset = (p: PresetId): void => {
