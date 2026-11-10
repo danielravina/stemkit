@@ -25,7 +25,8 @@ class Context {
   createStereoPanner() { return Object.assign(new AudioNode(), { pan: new Param() }) }
   createBufferSource() {
     const node = Object.assign(new AudioNode(), {
-      playbackRate: new Param(), stopped: false, start() {}, stop() { this.stopped = true }
+      playbackRate: new Param(), stopped: false, started: null,
+      start(...args) { this.started = args }, stop() { this.stopped = true }
     })
     this.sources.push(node)
     return node
@@ -117,9 +118,12 @@ test('pitch 0 keeps master wired straight to destination', () => {
   assert.equal(engine.pitch(), 0)
 })
 
-test('non-zero pitch routes master through the shifter and offsets the clock', async () => {
+test('non-zero pitch routes master through the shifter and jumps the clock ahead', async () => {
   const { calls, factory } = instant()
   const { engine, ctx, master } = playing(factory)
+  // mid-playback: 1 s after the first sample became audible
+  ctx.currentTime = 1.04 + 1
+  assert.ok(Math.abs(engine.expected() - 6) < 1e-9)
   await engine.setPitch(-3)
   const { shifter } = calls[0]
   assert.equal(master.outputs.length, 1)
@@ -127,14 +131,27 @@ test('non-zero pitch routes master through the shifter and offsets the clock', a
   assert.deepEqual(shifter.output.outputs, [ctx.destination])
   assert.equal(shifter.semitones.at(-1), -3)
   assert.equal(engine.pitch(), -3)
-  // re-aligned at the same position: the clock holds while the shifter's
-  // latency drains, then advances in step with currentTime
-  const startAt = ctx.currentTime + 0.04
-  assert.equal(engine.expected(), 5)
-  ctx.currentTime = startAt + 0.05 - 0.01
-  assert.equal(engine.expected(), 5)
-  ctx.currentTime = startAt + 0.05 + 1
-  assert.ok(Math.abs(engine.expected() - 6) < 1e-9)
+  // re-aligned ahead by the start delay plus the shifter's latency, so the
+  // position is where the video will be once the new path is audible
+  const audibleAt = ctx.currentTime + 0.04 + 0.05
+  assert.ok(Math.abs(engine.expected() - (6 + 0.09)) < 1e-9)
+  const [src] = ctx.sources.slice(-2)
+  assert.ok(src.started && Math.abs(src.started[1] - 6.09) < 1e-9, 'sources resume ahead')
+  ctx.currentTime = audibleAt + 1
+  assert.ok(Math.abs(engine.expected() - 7.09) < 1e-9)
+})
+
+test('a 0 -> n -> 0 round trip while playing does not leave the clock behind the wall clock', async () => {
+  const { factory } = instant()
+  const { engine, ctx } = playing(factory)
+  const audibleAt = ctx.currentTime + 0.04
+  ctx.currentTime = 2
+  await engine.setPitch(3)
+  ctx.currentTime = 3
+  await engine.setPitch(0)
+  ctx.currentTime = 4
+  const wall = 5 + (ctx.currentTime - audibleAt)
+  assert.ok(Math.abs(engine.expected() - wall) < 0.005, `expected ${engine.expected()} ~ ${wall}`)
 })
 
 test('back to 0 restores bypass', async () => {
@@ -186,18 +203,33 @@ test('factory failure leaves audio in bypass', async () => {
   assert.equal(engine.pitchError, 'Pitch shifter failed to load')
 })
 
-test('pitch set before the audio context exists applies once playback starts', async () => {
+test('pitch set before the audio context exists loads the shifter while paused', async () => {
   const { calls, factory } = instant()
   const engine = new StemEngine(factory)
   engine.setBuffers(buffers)
   await engine.setPitch(-2)
-  assert.equal(calls.length, 0)
+  assert.equal(calls.length, 1, 'the shifter loads before the first play')
+  assert.equal(engine.pitch(), -2)
+  const ctx = Context.last
   engine.setPlaying(true, 0)
   await new Promise((r) => setTimeout(r, 0))
-  // the re-route restarted the sources: read the graph from the live ones
-  const master = nodes(Context.last.sources.at(-1)).master
-  assert.equal(master.outputs[0], calls[0].shifter.input)
-  assert.equal(engine.pitch(), -2)
+  // routed from the first align: no re-route restarted the sources
+  assert.equal(ctx.sources.length, 2)
+  assert.ok(ctx.sources.every((s) => !s.stopped))
+  const master = nodes(ctx.sources[0]).master
+  assert.deepEqual(master.outputs, [calls[0].shifter.input])
+  assert.equal(calls.length, 1)
+})
+
+test('returning to 0 clears a previous load error', async () => {
+  const { calls, factory } = fakeFactory()
+  const { engine } = playing(factory)
+  const first = engine.setPitch(2)
+  calls[0].reject(new Error('Pitch shifter failed to load'))
+  await first
+  assert.equal(engine.pitchError, 'Pitch shifter failed to load')
+  await engine.setPitch(0)
+  assert.equal(engine.pitchError, null)
 })
 
 test('a failed load can be retried by pressing again', async () => {

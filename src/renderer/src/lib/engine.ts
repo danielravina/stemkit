@@ -4,6 +4,9 @@ import type { PitchShifter, ShifterFactory } from './pitch'
 
 export type BufferMap = Partial<Record<StemId, AudioBuffer>>
 
+// headroom between scheduling the sources and their first sample
+const START_DELAY = 0.04
+
 export async function decodePayload(
   payload: Record<string, Uint8Array>
 ): Promise<BufferMap> {
@@ -49,10 +52,11 @@ export class StemEngine {
   private anchorCtx = 0
   rate = 1
   // the latest requested pitch; may differ from the applied one while the
-  // shifter loads or before the AudioContext exists
+  // shifter loads
   private wantedPitch = 0
   private appliedPitch = 0
-  // created once and reused: building a worklet per change is slow and leaks
+  // created once and reused: building a worklet per change is slow and leaks.
+  // The node lives for the app session by design (never disposed here)
   private shifterLoad: Promise<PitchShifter> | null = null
   // the shifter master currently feeds, or null when bypassed
   private routed: PitchShifter | null = null
@@ -70,8 +74,6 @@ export class StemEngine {
       this.master = this.ctx.createGain()
       this.master.gain.value = this.mix.master
       this.master.connect(this.ctx.destination)
-      // a pitch chosen before the first play is applied now
-      if (this.wantedPitch !== 0) void this.applyPitch()
     }
     return this.ctx
   }
@@ -82,8 +84,16 @@ export class StemEngine {
 
   async setPitch(semitones: number): Promise<void> {
     this.wantedPitch = clampPitch(semitones)
-    // no context yet (nothing played): ensureCtx applies it later
-    if (!this.ctx) return
+    // a failed load is only relevant while a shift is wanted
+    if (this.wantedPitch === 0) this.pitchError = null
+    if (!this.ctx) {
+      // nothing to bypass before the first play
+      if (this.wantedPitch === 0) return
+      // load the shifter now, while paused, so the first play is routed
+      // through it from the start instead of re-routing mid-song once it
+      // lands (decodePayload also opens a context without a gesture)
+      this.ensureCtx()
+    }
     await this.applyPitch()
   }
 
@@ -132,9 +142,14 @@ export class StemEngine {
       master.connect(ctx.destination)
     }
     this.routed = next
-    // the path latency changed: restart the sources from where the listener
-    // is now so the clock and the video stay in step
-    if (this.playing) this.align(this.expected())
+    // the path latency changed: restart the sources from where the video
+    // will be once the new path is audible. Re-aligning at expected() would
+    // stall the clock for the start delay plus the latency while the video
+    // keeps running, and that lead would add up on every toggle
+    if (this.playing) {
+      const latency = next ? next.latency : 0
+      this.align(this.expected() + (START_DELAY + latency) * this.rate)
+    }
   }
 
   private getGain(id: StemId): GainNode {
@@ -192,7 +207,7 @@ export class StemEngine {
     this.anchorYt = time
     if (!this.ctx || !this.playing || !this.hasBuffers()) return
     const ctx = this.ctx
-    const startAt = ctx.currentTime + 0.04
+    const startAt = ctx.currentTime + START_DELAY
     for (const id of Object.keys(this.buffers) as StemId[]) {
       const buf = this.buffers[id]
       if (!buf) continue
@@ -210,11 +225,11 @@ export class StemEngine {
   }
 
   // Held at anchorYt until the first sample is audible, then advances with the
-  // context clock. A re-route calls align(expected()), so the new anchorYt is
-  // the value expected() had just before: the clock pauses for the start delay
-  // plus the new path's latency and never goes backwards. The price is that
-  // the listener hears up to one old-path latency (≈0.12 s) of audio again or
-  // skipped, far below Player's 0.4 s re-seek threshold
+  // context clock. A re-route aligns ahead by the start delay plus the new
+  // path's latency, so once the new path is audible the clock is exactly where
+  // it would have been without the re-route: it never stalls or goes back,
+  // and the video keeps no lead. The price is a short skip in the audio
+  // (about the start delay plus the latency), not a sync error
   expected(): number {
     if (!this.ctx || !this.playing) return this.anchorYt
     const now = this.ctx.currentTime
