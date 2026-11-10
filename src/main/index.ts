@@ -310,6 +310,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('export:begin', async (_e, kind: 'file' | 'folder', name: string) => {
     const format = loadSettings().exportFormat
+    // a broken ffmpeg should stop an AAC export before the picker and the render, not after
+    if (format === 'aac') requireExportFfmpeg()
     const ext = format === 'aac' ? 'm4a' : 'wav'
     const safe = sanitizeName(String(name))
     if (kind === 'file') {
