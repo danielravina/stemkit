@@ -107,7 +107,7 @@ video iframe (muted) + Web Audio stem playback · master clock = the audio itsel
 
 - Downloading audio from YouTube violates their ToS for public products — keep this personal.
 - Want the data somewhere else (venv, models, songs, library)? Start the app with `STEMKIT_DATA_DIR=/path/to/folder` set. Unset keeps the default app folder.
-- Want Claude (or any MCP client) to drive it? [`mcp/`](mcp) is a headless MCP server over the same library and engine: split, key/pitch/pan, and every export the dialog offers.
+- Want Claude (or any MCP client) to drive it? [`mcp/`](mcp) is a headless MCP server over the same library and engine: split, key/pitch/pan, and every export the dialog offers. It ships a `make-cover` skill that turns a play-along video into a full-band cover.
 - yt-dlp breaks occasionally when YouTube changes things; the error dialog offers a one-click update (updates `yt-dlp` + the challenge solver together).
 
 ## Privacy
@@ -125,7 +125,7 @@ src/preload      IPC bridge
 src/renderer     React UI (player, sync engine, waveforms)
 python/          separate.py (demucs) and roformer.py (neural vocals) with JSON progress output
 python/vendor/   patched model code — see python/vendor/README.md
-mcp/             MCP server (headless StemKit)
+mcp/             MCP server (headless StemKit) + skills/make-cover
 scripts/         node runner, ffmpeg fetchers
 build/           icon sources
 ```

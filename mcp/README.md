@@ -40,3 +40,9 @@ claude mcp add --scope user stemkit -- uv run --quiet --project /path/to/stemkit
 | `STEMKIT_DATA_DIR` | the app's data folder (same variable the app honours) |
 | `STEMKIT_SCRIPTS` | `../python` in this repo, else the installed app's `resources/python` |
 | `STEMKIT_FFMPEG` | `ffmpeg` on PATH |
+
+## Skills built on it
+
+[`skills/make-cover`](skills/make-cover/SKILL.md) is a Claude Code skill. Record yourself
+playing along to a song, and it finds the song, splits it, drops your instrument's stem,
+syncs your take to the bar, cleans up your audio, mixes, and writes the video.
