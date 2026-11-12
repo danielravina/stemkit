@@ -20,7 +20,8 @@ Everything runs locally — no accounts, no API keys. Your songs, searches and a
 - One-click presets: **All · Karaoke · Acapella · Drums + Bass**
 - Per-stem mute/solo/volume, waveforms with click-to-seek
 - Parallel background splitting with live progress
-- Export any stem (or all) as WAV
+- Export checked stems mixed into one file or separately, with mixer volume/pan and original or shifted pitch (WAV, or AAC in Settings)
+- Detected song key (editable) and live pitch shift (±6 semitones)
 - Fully offline after setup — separation runs on Mac (MPS), NVIDIA GPUs (CUDA), AMD GPUs on Linux (ROCm, experimental) or CPU; ffmpeg included
 
 ## Download
