@@ -25,6 +25,7 @@ interface Props {
   onMaster: (v: number) => void
   songKey?: SongKey
   onKeyOverride?: (key: string | null) => void
+  onKeyRedetect?: () => void
   // local-file songs have no video to link out to
   youtubeUrl?: string
 }
@@ -161,6 +162,7 @@ export function Transport({
   onMaster,
   songKey,
   onKeyOverride,
+  onKeyRedetect,
   youtubeUrl
 }: Props): React.ReactElement {
   // onSeek clamps to the track bounds, so no need to guard here
@@ -223,7 +225,11 @@ export function Transport({
           />
         </div>
 
-        <KeyControl songKey={songKey} onOverride={onKeyOverride ?? (() => {})} />
+        <KeyControl
+          songKey={songKey}
+          onOverride={onKeyOverride ?? (() => {})}
+          onRedetect={onKeyRedetect ?? (() => {})}
+        />
 
         {youtubeUrl && (
           <button

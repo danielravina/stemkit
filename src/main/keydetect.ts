@@ -75,20 +75,26 @@ export function withOverride(key: SongKey, previous: SongKey | undefined): SongK
 
 const inflight = new Map<string, Promise<SongKey>>()
 
-export function detectOnce(videoId: string, run = runKeyScript): Promise<SongKey> {
+// force: the user asked to retry (a stored failure is otherwise final, so a
+// missing venv does not cost a 2-minute timeout on every song open)
+export function detectOnce(
+  videoId: string,
+  run = runKeyScript,
+  { force = false }: { force?: boolean } = {}
+): Promise<SongKey> {
   const existing = inflight.get(videoId)
   if (existing) return existing
   const song = loadSongs().find((s) => s.videoId === videoId)
   if (!song) return Promise.resolve({ detected: null })
-  // detection is attempted once per song: any stored key, even
-  // { detected: null } (attempted and failed), is final
-  if (song.key) return Promise.resolve(song.key)
+  // detection runs once per song on its own: any stored key, even
+  // { detected: null } (attempted and failed), is final unless forced
+  if (song.key && !force) return Promise.resolve(song.key)
   const job = (async (): Promise<SongKey> => {
     const release = await acquireSeparation()
     try {
       const result = await run(keyInputs(videoId, stemsFor(song)))
       // keep a user override that was set before detection finished; a
-      // failure is stored too so it is not retried
+      // failure is stored too so it is not retried automatically
       const current = loadSongs().find((s) => s.videoId === videoId)?.key
       const key = withOverride(result, current)
       patchSongKey(videoId, key)

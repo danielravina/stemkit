@@ -137,7 +137,8 @@ export interface StemKitApi {
   clearLibrary(): Promise<void>
   getBuffers(videoId: string): Promise<Record<string, Uint8Array>>
   getStemPan(videoId: string): Promise<StemPanMap>
-  detectKey(videoId: string): Promise<SongKey>
+  // force retries a detection that already ran (normally a stored result is final)
+  detectKey(videoId: string, force?: boolean): Promise<SongKey>
   setKeyOverride(videoId: string, override: string | null): Promise<SongKey>
   setStemPan(videoId: string, pans: StemPanMap): Promise<void>
   exportStem(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>

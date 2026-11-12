@@ -523,6 +523,20 @@ export function Player({ song, settings }: Props): React.ReactElement {
                 })
                 .catch(() => {})
             }}
+            onKeyRedetect={() => {
+              const id = song.videoId
+              const previous = songKey
+              // '…' while it runs, like the first detection
+              setSongKey(undefined)
+              window.stemkit
+                .detectKey(id, true)
+                .then((k) => {
+                  if (songIdRef.current === id) setSongKey(k)
+                })
+                .catch(() => {
+                  if (songIdRef.current === id) setSongKey(previous)
+                })
+            }}
             youtubeUrl={youtubeUrl ?? undefined}
           />
 

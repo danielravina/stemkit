@@ -235,7 +235,9 @@ app.whenReady().then(async () => {
   ipcMain.handle('library:list', () => loadSongs())
   ipcMain.handle('song:pan:get', (_e, videoId: string) => loadStemPan(videoId))
   ipcMain.handle('song:pan:set', (_e, videoId: string, pans: unknown) => saveStemPan(videoId, pans))
-  ipcMain.handle('song:key:detect', (_e, videoId: string) => detectOnce(videoId))
+  ipcMain.handle('song:key:detect', (_e, videoId: string, force?: unknown) =>
+    detectOnce(videoId, undefined, { force: force === true })
+  )
   ipcMain.handle('song:key:set', (_e, videoId: string, override: string | null) =>
     setKeyOverride(videoId, override)
   )

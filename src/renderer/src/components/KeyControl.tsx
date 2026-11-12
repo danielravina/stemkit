@@ -5,12 +5,14 @@ import { KEY_NAMES } from '../../../shared/keys'
 interface Props {
   songKey: SongKey | undefined
   onOverride: (key: string | null) => void
+  // retry a detection that failed (shown as ?)
+  onRedetect: () => void
 }
 
 const MAJORS = KEY_NAMES.slice(0, 12)
 const MINORS = KEY_NAMES.slice(12)
 
-export function KeyControl({ songKey, onOverride }: Props): React.ReactElement {
+export function KeyControl({ songKey, onOverride, onRedetect }: Props): React.ReactElement {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
 
@@ -71,6 +73,17 @@ export function KeyControl({ songKey, onOverride }: Props): React.ReactElement {
           aria-label="Original key"
           className="no-drag absolute bottom-full right-0 mb-2 z-50 w-64 p-2 rounded-xl bg-[#16151d] border border-white/[0.08] shadow-2xl"
         >
+          {songKey?.detected === null && (
+            <button
+              onClick={() => {
+                onRedetect()
+                setOpen(false)
+              }}
+              className="w-full text-left px-2 py-1 mb-1 rounded-md text-[12px] text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+            >
+              Detection failed · Detect again
+            </button>
+          )}
           {(songKey?.detected || override) && (
             <button
               onClick={() => choose(null)}

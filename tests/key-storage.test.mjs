@@ -105,6 +105,32 @@ test('detectOnce attempts once: a failure is stored and never retried', async ()
   assert.equal(calls, 1)
 })
 
+test('detectOnce with force retries a stored failure and keeps the override', async () => {
+  saveSongs([{ ...mk('r'), key: { detected: null, override: 'Am' } }])
+  mkdirSync(join(root, 'songs', 'r'), { recursive: true })
+  let calls = 0
+  const run = async () => (calls++, { detected: 'C' })
+  assert.deepEqual(await detectOnce('r', run), { detected: null, override: 'Am' })
+  assert.equal(calls, 0)
+  assert.deepEqual(await detectOnce('r', run, { force: true }), { detected: 'C', override: 'Am' })
+  assert.equal(calls, 1)
+  assert.deepEqual(loadSongs()[0].key, { detected: 'C', override: 'Am' })
+})
+
+test('a forced detection joins one already in flight', async () => {
+  saveSongs([mk('j')])
+  mkdirSync(join(root, 'songs', 'j'), { recursive: true })
+  let calls = 0
+  const run = async () => {
+    calls++
+    await new Promise((r) => setTimeout(r, 20))
+    return { detected: 'D' }
+  }
+  const [a, b] = await Promise.all([detectOnce('j', run), detectOnce('j', run, { force: true })])
+  assert.equal(calls, 1)
+  assert.deepEqual(a, b)
+})
+
 test('an override on a keyless song marks it attempted', async () => {
   saveSongs([mk('g')])
   setKeyOverride('g', 'Am')
