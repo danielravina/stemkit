@@ -68,7 +68,8 @@ What it does:
 - **Mix.** Player at -16.5 LUFS, backing at -16, final mix around -13 LUFS with peaks at
   or below -1.5 dBFS. For drums, the song's bass dips 2–3 dB under each kick.
 - **Video.** The picture is stream-copied and the camera's audio start offset is
-  accounted for.
+  accounted for. The delay the denoiser and limiter add is measured and taken back off,
+  so the playing stays on the beat and on the picture.
 
 ## 5. Report
 
@@ -81,6 +82,10 @@ Tell the user:
 - the final loudness
 
 If confidence is below 1.5, list `bar_alternatives` so they can pick one by ear.
+
+`make` measures what it wrote and reports `checks` / `checks_passed`: picture stream-copied,
+48 kHz audio, length equal to the cut, true peak, loudness over the playing, input file
+untouched. If `checks_passed` is false, tell the user which check failed and its value.
 
 ## 6. Fix it by ear
 
@@ -106,6 +111,10 @@ light.
 
 `cover.py analyze` gives sync and cut alone, without rendering. It's useful to check a
 take before committing.
+
+Tests: `cd mcp && uv run pytest skills/make-cover/tests` builds a song with sections, rests
+and fills plus a play-along take with a known offset, and checks sync (5 ms, right bar),
+the cut, sample-exact placement of the backing and the playing, and every `make` check.
 
 ## Extras via the MCP
 

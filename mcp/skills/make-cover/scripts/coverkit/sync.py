@@ -37,19 +37,28 @@ def _moving(x: np.ndarray, n: int) -> np.ndarray:
 
 
 def playing_region(cam: np.ndarray) -> tuple[float, float, float]:
-    """(entry, stop, ref_db) in cam time. stop = where the playing starts to die away."""
+    """(entry, stop, ref_db) in cam time. stop = where the playing starts to die away.
+
+    Levels are averaged as power over 1 s (entry) and 0.5 s (stop) windows, so the gaps
+    between notes of a sparse part don't count as silence."""
     r = rms_db(cam, 1102)                       # 0.1 s frames
     ref = float(np.percentile(r, 90))
-    on = _moving((r > ref - 12).astype(float), 10) > 0.5
-    idx = np.flatnonzero(on)
+    p = 10 ** (r / 10)
+    s1 = 10 * np.log10(_moving(p, 10) + 1e-12)
+    s5 = 10 * np.log10(_moving(p, 5) + 1e-12)
+    sref = float(np.percentile(s1, 90))
+    idx = np.flatnonzero(s1 > sref - 12)
     if len(idx) == 0:
         return 0.0, len(cam) / SR, ref
     entry = max(0.0, (idx[0] - 5) * 0.1)
-    # refine the entry to the first strong level jump
-    seg = r[max(0, idx[0] - 15): idx[0] + 15]
+    # refine to the first note: the first jump up to near playing level (else the biggest jump)
+    lo = max(0, idx[0] - 15)
+    seg = r[lo: idx[0] + 15]
     if len(seg) > 1:
-        entry = (max(0, idx[0] - 15) + int(np.argmax(np.diff(seg))) + 1) * 0.1
-    loud = np.flatnonzero(_moving(r, 5) > ref - 6)
+        d = np.diff(seg)
+        jumps = np.flatnonzero((d > 6) & (seg[1:] > sref - 15))
+        entry = (lo + int(jumps[0] if len(jumps) else np.argmax(d)) + 1) * 0.1
+    loud = np.flatnonzero(s5 > sref - 6)
     stop = (loud[-1] + 1) * 0.1 if len(loud) else (idx[-1] + 1) * 0.1
     return entry, stop, ref
 
@@ -122,6 +131,8 @@ def find_lag(cam: np.ndarray, inst: np.ndarray, full_mix: np.ndarray,
         if len(cand) >= 40:
             break
 
+    if not cand:
+        raise ValueError("could not find the song's rhythm in the recording; pass --lag")
     beat = estimate_beat(fs)
     bar = 4 * beat
     best0 = max(cand, key=lambda L: onset_z(L) + anchor(L))

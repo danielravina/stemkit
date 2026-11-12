@@ -26,5 +26,5 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "skills/make-cover/tests"]
 addopts = "-ra"

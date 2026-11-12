@@ -59,8 +59,11 @@ def analyze(video: str, song_dir: str, instrument: str, lag: float | None) -> tu
     if not info["has_audio"]:
         raise MediaError("the video has no audio track to take the playing from")
     stems, mix = song_files(song_dir)
+    warnings = []
     if instrument not in stems:
-        log(f"no {instrument} stem in this split; syncing against the full mix instead")
+        warnings.append(f"no {instrument} stem in this split: synced against the full mix, and "
+                        "`make` will refuse (the original part would stay in the backing)")
+        log(warnings[-1])
     work = work_dir(video)
     cam = work / "camera.wav"
     if not cam.exists():
@@ -70,6 +73,7 @@ def analyze(video: str, song_dir: str, instrument: str, lag: float | None) -> tu
     a = Y.analyze(str(cam), info["audio_start"], info["duration"], stems, instrument, mix, lag=lag)
     a["video"] = str(Path(video).resolve())
     a["song_dir"] = str(Path(song_dir).expanduser().resolve())
+    a["warnings"] = warnings
     (work / f"analysis_{instrument}.json").write_text(json.dumps(a, indent=2))
     return a, stems, work
 
@@ -95,6 +99,29 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(R.settings(a.instrument, None), indent=2))
         return 0
     video = str(Path(a.video).expanduser().resolve())
+    if not Path(video).is_file():
+        raise MediaError(f"no such video: {video}")
+    sets = {}
+    if a.cmd == "make":
+        # check everything cheap before the slow analysis
+        for kv in a.set:
+            if "=" not in kv:
+                raise ValueError(f"--set wants KEY=VALUE, got {kv!r}")
+            k, v = kv.split("=", 1)
+            try:
+                sets[k] = json.loads(v)
+            except json.JSONDecodeError:
+                sets[k] = v
+        R.settings(a.instrument, sets)
+        suffix = "with_stems" if a.instrument == "drums" else "with_band"
+        out = a.out or str(Path(video).with_name(f"{Path(video).stem}_{suffix}.mp4"))
+        if Path(out).expanduser().resolve() == Path(video):
+            raise MediaError("output would overwrite the input video")
+        if a.cut is not None and a.cut <= 0:
+            raise ValueError("--cut must be a positive time in video seconds")
+        if a.instrument not in song_files(a.song_dir)[0]:
+            raise MediaError(f"this split has no '{a.instrument}' stem; re-split with htdemucs_6s "
+                             "for guitar or piano, or use --instrument other")
     an, stems, work = analyze(video, a.song_dir, a.instrument, a.lag)
     if a.cmd == "analyze":
         print(json.dumps(an, indent=2))
@@ -102,19 +129,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.cut is not None:
         an["cut_video"], an["cut_reason"] = float(a.cut), "cut given by caller"
-    sets = {}
-    for kv in a.set:
-        k, v = kv.split("=", 1)
-        try:
-            sets[k] = json.loads(v)
-        except json.JSONDecodeError:
-            sets[k] = v
-    suffix = "with_stems" if a.instrument == "drums" else "with_band"
-    out = a.out or str(Path(video).with_name(f"{Path(video).stem}_{suffix}.mp4"))
     res = R.render(video, stems, a.instrument, an, out, work, sets, log)
     print(json.dumps({
         "output": res["output"],
         "sync": {"lag_seconds": an["lag_cam"], "confidence": an["sync"].get("confidence"),
+                 "song_offset_at_video_start": an["song_offset_at_video_start"],
                  "bpm": an["sync"].get("bpm"), "enters_at_video": an["entry_video"],
                  "enters_at_song": an["entry_song"],
                  "bar_alternatives": [{k: c[k] for k in ("lag", "bars_from_best", "score")}
@@ -123,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
         "mix": {k: res[k] for k in ("duration", "loudness_lufs", "true_peak_dbtp", "gains_db",
                                     "backing_stems", "ducked", "noise_profile_windows")},
         "settings": res["settings"],
+        "checks": res["checks"],
+        "checks_passed": res["checks_passed"],
     }, indent=2))
     return 0
 
