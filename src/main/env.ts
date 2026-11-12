@@ -804,11 +804,37 @@ export function ensureFtWeights(onProgress?: (pct: number) => void): Promise<boo
   return ftWeightsPromise.then(detach)
 }
 
-/* MIDI export (basic-pitch, onnx backend — avoids pulling in tensorflow
-   alongside the existing torch stack). The onnx model file itself ships
-   inside the pip package (~230KB); the ~300MB is basic-pitch's dependency
-   tree (librosa, onnxruntime, scipy, numba). Installed into the same venv
-   as everything else, on demand, the first time a MIDI export is used */
+/* MIDI export (basic-pitch, onnx backend). basic-pitch's own metadata
+   hard-requires full tensorflow on non-Darwin when python >= 3.11 (our
+   bundled runtime is 3.11) and coremltools on Darwin, and its default
+   ICASSP_2022_MODEL_PATH prefers TF > CoreML > TFLite > ONNX. So we install
+   it with --no-deps, list its runtime deps ourselves with onnxruntime as the
+   only backend, and midi.py loads the onnx model explicitly. Same footprint
+   on every platform (~110-160MB download), no tensorflow next to torch.
+   Installed into the same venv as everything else, on demand, the first
+   time a MIDI export is used */
+const BASIC_PITCH_VERSION = '0.4.0'
+// mirrors basic-pitch 0.4.0's install_requires minus the platform-marked
+// backends (tensorflow / tensorflow-macos / coremltools / tflite-runtime)
+const MIDI_DEPS = [
+  'librosa>=0.8.0',
+  'mir-eval>=0.6',
+  'numpy>=1.18',
+  'pretty-midi>=0.2.9',
+  'resampy>=0.2.2,<0.4.3',
+  'scikit-learn',
+  'scipy>=1.4.1',
+  'typing-extensions',
+  'onnxruntime',
+  // resampy still imports pkg_resources, which setuptools removed in 81
+  'setuptools<81'
+]
+const MIDI_SMOKE_TEST = [
+  'import onnxruntime',
+  'from basic_pitch.inference import predict',
+  'from basic_pitch import build_icassp_2022_model_path, FilenameSuffix',
+  'assert build_icassp_2022_model_path(FilenameSuffix.onnx).exists(), "onnx model missing"'
+].join('; ')
 let midiEnginePromise: Promise<boolean> | null = null
 const midiProgressListeners = new Set<(pct: number) => void>()
 
@@ -832,7 +858,7 @@ export function ensureMidiEngine(onProgress?: (pct: number) => void): Promise<bo
   }
   if (!midiEnginePromise) {
     midiEnginePromise = (async () => {
-      sendEnvEvent('Downloading the MIDI engine (~300MB, one time)')
+      sendEnvEvent('Downloading the MIDI engine (~150MB, one time)')
       // pip resolves ~14 wheels for this extra; there's no single clean
       // percentage across them, so approximate progress by counting
       // packages as pip starts collecting each one
@@ -845,11 +871,7 @@ export function ensureMidiEngine(onProgress?: (pct: number) => void): Promise<bo
           'install',
           '--progress-bar',
           'off',
-          'basic-pitch[onnx]',
-          // resampy (a basic-pitch dependency) still imports pkg_resources,
-          // which setuptools removed in 81 — pin below that so it stays
-          // importable
-          'setuptools<81'
+          ...MIDI_DEPS
         ])
         let lastErr = ''
         child.stdout?.on('data', (chunk: Buffer) => {
@@ -877,7 +899,46 @@ export function ensureMidiEngine(onProgress?: (pct: number) => void): Promise<bo
         )
         child.on('error', reject)
       })
-      writeFileSync(midiMarkerPath(), JSON.stringify({ createdAt: Date.now() }))
+      // basic-pitch itself without its declared deps (see MIDI_DEPS above)
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(venvPython(), [
+          '-m',
+          'pip',
+          'install',
+          '--progress-bar',
+          'off',
+          '--no-deps',
+          `basic-pitch==${BASIC_PITCH_VERSION}`
+        ])
+        let lastErr = ''
+        child.stderr?.on('data', (chunk: Buffer) => {
+          lastErr = chunk.toString().trim()
+        })
+        child.on('close', (code) =>
+          code === 0
+            ? resolve()
+            : reject(
+                new Error(
+                  `basic-pitch install failed (${code})${lastErr ? `: ${lastErr.slice(0, 200)}` : ''}`
+                )
+              )
+        )
+        child.on('error', reject)
+      })
+      // catch a broken install now rather than on the first export
+      try {
+        await runCapture(venvPython(), ['-c', MIDI_SMOKE_TEST], 60000)
+      } catch (err) {
+        // execFile errors are "Command failed: <cmd>\n<stderr>"; the last
+        // traceback line is the actual exception
+        const msg = (err instanceof Error ? err.message : String(err)).trim()
+        const reason = msg.split('\n').pop() ?? msg
+        throw new Error(`MIDI engine installed but failed to load: ${reason.slice(0, 200)}`)
+      }
+      writeFileSync(
+        midiMarkerPath(),
+        JSON.stringify({ createdAt: Date.now(), basicPitch: BASIC_PITCH_VERSION })
+      )
       for (const listener of midiProgressListeners) listener(100)
       sendEnvEvent('MIDI engine ready', 'success')
       return true

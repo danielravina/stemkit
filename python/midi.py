@@ -28,9 +28,12 @@ def main():
     try:
         with redirect_stdout(io.StringIO()):
             from basic_pitch.inference import predict
-            from basic_pitch import ICASSP_2022_MODEL_PATH
+            from basic_pitch import build_icassp_2022_model_path, FilenameSuffix
 
-            _, midi_data, note_events = predict(args.input, ICASSP_2022_MODEL_PATH)
+            # pin the onnx model: ICASSP_2022_MODEL_PATH picks whichever
+            # backend happens to be importable (TF > CoreML > TFLite > ONNX)
+            model_path = build_icassp_2022_model_path(FilenameSuffix.onnx)
+            _, midi_data, note_events = predict(args.input, model_path)
     except Exception as e:
         fail(f"transcription failed: {e}")
 
