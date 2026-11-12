@@ -7,8 +7,25 @@ import { sanitizeName } from './library'
 // stays testable. The user picks the destination once, then the renderer sends
 // each rendered WAV; main never trusts a path coming from the renderer.
 // the format is pinned at begin: the dialog already showed that extension to the user
-type Session = { kind: 'file' | 'folder'; path: string; format: 'wav' | 'aac' }
+type Session = { kind: 'file' | 'folder'; path: string; format: 'wav' | 'aac'; expiresAt: number }
 const sessions = new Map<string, Session>()
+// a renderer that crashes mid-export never sends export:end, so an idle
+// session expires; every write pushes the deadline back
+export const SESSION_TTL_MS = 10 * 60_000
+
+function liveSession(token: string): Session | undefined {
+  const session = sessions.get(token)
+  if (session && session.expiresAt <= Date.now()) {
+    sessions.delete(token)
+    return undefined
+  }
+  return session
+}
+
+// for tests: how many sessions main still holds
+export function openSessionCount(): number {
+  return sessions.size
+}
 // "Show in folder" takes a path from the renderer, so main only reveals what an
 // export actually wrote this run (the file, or the folder of a separate export)
 const revealable = new Set<string>()
@@ -18,8 +35,10 @@ export function canReveal(path: unknown): path is string {
 }
 
 export function openSession(kind: 'file' | 'folder', path: string, format: 'wav' | 'aac'): string {
+  const now = Date.now()
+  for (const [t, s] of sessions) if (s.expiresAt <= now) sessions.delete(t)
   const token = randomUUID()
-  sessions.set(token, { kind, path, format })
+  sessions.set(token, { kind, path, format, expiresAt: now + SESSION_TTL_MS })
   return token
 }
 
@@ -29,8 +48,9 @@ export async function writeToSession(
   wav: Uint8Array,
   transcode: (src: string, dest: string) => Promise<void>
 ): Promise<string> {
-  const session = sessions.get(token)
+  const session = liveSession(token)
   if (!session) throw new Error('Unknown export session')
+  session.expiresAt = Date.now() + SESSION_TTL_MS
   const format = session.format
   const ext = format === 'aac' ? 'm4a' : 'wav'
   let dest: string

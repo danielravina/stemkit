@@ -1,4 +1,4 @@
-import { test, after } from 'node:test'
+import { test, after, mock } from 'node:test'
 import assert from 'node:assert/strict'
 import { registerTsHooks } from './helpers/ts-resolve.mjs'
 import { mkdtempSync, readFileSync, existsSync, readdirSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
@@ -8,7 +8,7 @@ import { join } from 'node:path'
 const root = mkdtempSync(join(tmpdir(), 'stemkit-session-'))
 after(() => rmSync(root, { recursive: true, force: true }))
 const hooks = registerTsHooks({ stubEnv: `export const userDataDir = () => ${JSON.stringify(root)}` })
-const { openSession, writeToSession, closeSession, canReveal } = await import(
+const { openSession, writeToSession, closeSession, canReveal, SESSION_TTL_MS, openSessionCount } = await import(
   new URL('../src/main/export-session.ts', import.meta.url).href
 )
 hooks.deregister()
@@ -123,4 +123,33 @@ test('reveal refuses anything that is not a plain string path', () => {
   assert.equal(canReveal(['/x.wav']), false)
   assert.equal(canReveal(undefined), false)
   assert.equal(canReveal({ toString: () => '/x.wav' }), false)
+})
+
+test('a session idle past the TTL expires; a write keeps it alive', async (t) => {
+  mock.timers.enable({ apis: ['Date'], now: Date.now() })
+  t.after(() => mock.timers.reset())
+  assert.equal(SESSION_TTL_MS, 10 * 60_000)
+  const dir = mkdtempSync(join(root, 'ttl-'))
+  const live = openSession('folder', dir, 'wav')
+  const idle = openSession('folder', dir, 'wav')
+  mock.timers.tick(SESSION_TTL_MS - 1)
+  await writeToSession(live, 'a', wav, noTranscode)
+  mock.timers.tick(2)
+  await assert.rejects(writeToSession(idle, 'b', wav, noTranscode), /Unknown export session/)
+  await writeToSession(live, 'c', wav, noTranscode)
+  closeSession(live)
+})
+
+test('opening a session sweeps the ones a crashed renderer left behind', (t) => {
+  mock.timers.enable({ apis: ['Date'], now: Date.now() })
+  t.after(() => mock.timers.reset())
+  const dir = mkdtempSync(join(root, 'sweep-'))
+  const before = openSessionCount()
+  openSession('folder', dir, 'wav')
+  openSession('folder', dir, 'wav')
+  assert.equal(openSessionCount(), before + 2)
+  mock.timers.tick(SESSION_TTL_MS + 1)
+  const fresh = openSession('folder', dir, 'wav')
+  assert.equal(openSessionCount(), 1)
+  closeSession(fresh)
 })
