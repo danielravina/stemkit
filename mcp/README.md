@@ -23,7 +23,10 @@ vice versa, and pan, pitch and key edits are shared with the player.
 
 Exports follow the app: 44.1 kHz 32-bit float WAV (or 256k AAC), the same
 gain → pan → pitch chain, scaled down only when the mix would clip, and the same file
-names. Pitch shifting uses ffmpeg's `rubberband` filter when available.
+names. Pitch shifting uses ffmpeg's `rubberband` filter when available. An existing file
+is never replaced: the new one is saved as `name (2)` unless `overwrite` is set.
+
+A split that fails or is cancelled leaves the song's previous split in place.
 
 ## Setup
 
@@ -40,3 +43,14 @@ claude mcp add --scope user stemkit -- uv run --quiet --project /path/to/stemkit
 | `STEMKIT_DATA_DIR` | the app's data folder (same variable the app honours) |
 | `STEMKIT_SCRIPTS` | `../python` in this repo, else the installed app's `resources/python` |
 | `STEMKIT_FFMPEG` | `ffmpeg` on PATH |
+
+## Tests
+
+```bash
+cd mcp && uv run pytest
+```
+
+Needs `ffmpeg`. No models or network: a fake engine stands in for the app's python
+scripts and speaks the same JSON-lines protocol. With `node` installed, `test_parity.py`
+also runs the app's own TypeScript (`src/shared`, `src/main/library.ts`) on the same inputs
+and checks the Python side gives the same ids, names, pitch, pan and key results.

@@ -4,7 +4,9 @@ drives the same python scripts with the same arguments."""
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -24,6 +26,7 @@ AUDIO_EXTENSIONS = {"mp3", "wav", "m4a", "aac", "flac", "ogg", "opus", "wma", "a
 _busy: set[str] = set()
 _busy_lock = threading.Lock()
 _procs: dict[str, subprocess.Popen] = {}
+_cancelled: set[str] = set()
 
 
 # ------------------------------------------------------------------ ids
@@ -75,16 +78,34 @@ def _run(cmd: list[str], job: str | None = None,
     code = p.wait()
     t.join(timeout=2)
     _procs.pop(job or "", None)
+    if job and job in _cancelled:
+        raise StemKitError("Cancelled")
     if code != 0:
         raise StemKitError(f"{Path(cmd[0]).name} failed: {''.join(err_tail)[-800:]}")
     return "".join(out)
 
 
 def cancel(video_id: str | None = None) -> list[str]:
-    hit = [k for k in list(_procs) if video_id is None or k == video_id]
+    """Stop running splits. The split job then fails with 'Cancelled' and puts back the
+    song's previous split, if it had one."""
+    with _busy_lock:
+        hit = [k for k in _busy if video_id is None or k == video_id]
+        _cancelled.update(hit)
     for k in hit:
-        _procs[k].kill()
+        p = _procs.get(k)
+        if p:
+            p.kill()
     return hit
+
+
+def is_busy(video_id: str) -> bool:
+    with _busy_lock:
+        return video_id in _busy
+
+
+def _check_cancelled(video_id: str) -> None:
+    if video_id in _cancelled:
+        raise StemKitError("Cancelled")
 
 
 # ------------------------------------------------------------------ search
@@ -155,21 +176,27 @@ def _separate(video_id: str, plan: dict, stems: list[str] | None, progress: Prog
     base = [py, str(scripts / "separate.py"), "--input", mix, "--out", out,
             "--device", plan["device"], "--shifts", str(s["shifts"])]
 
-    if plan["engine"] == L.MODEL_DEFAULT:
-        others = [x for x in (stems or ["drums", "bass", "other", "vocals"]) if x != "vocals"]
-        span = 35 if others else 100
-        if plan["wants_vocals"]:
-            progress("separating vocals (mel-band roformer)")
-            _run([py, str(scripts / "roformer.py"), "--input", mix, "--out", out,
-                  "--ckpt-dir", str(models_dir()), "--device", plan["device"]], video_id,
-                 _script_runner(video_id, progress, (0, span), produced, errors))
-        if others:
-            model = "htdemucs_ft" if s["htdemucsFt"] else "htdemucs"
-            _run(base + ["--model", model, "--only", ",".join(others)], video_id,
-                 _script_runner(video_id, progress, (span, 100), produced, errors))
-    else:
-        _run(base + ["--model", plan["engine"], *only], video_id,
-             _script_runner(video_id, progress, (0, 100), produced, errors))
+    try:
+        if plan["engine"] == L.MODEL_DEFAULT:
+            others = [x for x in (stems or ["drums", "bass", "other", "vocals"]) if x != "vocals"]
+            span = 35 if others else 100
+            if plan["wants_vocals"]:
+                progress("separating vocals (mel-band roformer)")
+                _run([py, str(scripts / "roformer.py"), "--input", mix, "--out", out,
+                      "--ckpt-dir", str(models_dir()), "--device", plan["device"]], video_id,
+                     _script_runner(video_id, progress, (0, span), produced, errors))
+            if others:
+                model = "htdemucs_ft" if s["htdemucsFt"] else "htdemucs"
+                _run(base + ["--model", model, "--only", ",".join(others)], video_id,
+                     _script_runner(video_id, progress, (span, 100), produced, errors))
+        else:
+            _run(base + ["--model", plan["engine"], *only], video_id,
+                 _script_runner(video_id, progress, (0, 100), produced, errors))
+    except StemKitError:
+        # the scripts report the reason as a JSON error line on stdout, then exit 1
+        if errors and video_id not in _cancelled:
+            raise StemKitError(f"Separation failed: {errors[-1]}") from None
+        raise
 
     if errors:
         raise StemKitError(f"Separation failed: {errors[-1]}")
@@ -234,30 +261,46 @@ def _convert(src: Path, dest: Path) -> None:
 
 # ------------------------------------------------------------------ split
 
+def _looks_like_path(source: str) -> bool:
+    s = source.strip()
+    return "://" not in s and ("/" in s or "\\" in s or s.startswith("~")
+                               or Path(s).suffix.lower().lstrip(".") in AUDIO_EXTENSIONS)
+
+
 def split(source: str, model: str = L.MODEL_DEFAULT, stems: list[str] | None = None,
           progress: Progress = lambda _: None) -> dict:
-    """YouTube URL / id or a local audio file -> stems in the library."""
+    """YouTube URL / id or a local audio file -> stems in the library.
+
+    If the split fails or is cancelled, the song's previous split (if any) is left as it was.
+    """
     require_engine()
+    if model not in (L.MODEL_DEFAULT, L.MODEL_EXTENDED):
+        raise StemKitError(f"unknown model {model!r}; use {L.MODEL_DEFAULT} or {L.MODEL_EXTENDED}")
     if stems:
         bad = [s for s in stems if s not in L.ALL_STEMS]
         if bad:
             raise StemKitError(f"unknown stems {bad}; choose from {L.ALL_STEMS}")
-    path = Path(source).expanduser()
+    path = Path(source.strip()).expanduser()
     local = path.is_file()
     if local:
         if path.suffix.lower().lstrip(".") not in AUDIO_EXTENSIONS:
             raise StemKitError(f"unsupported audio file type {path.suffix}")
-        abs_path = str(path.resolve())
-        vid = local_song_id(abs_path)
+        # the app hashes the absolute path the file dialog gives it, symlinks not followed
+        vid = local_song_id(os.path.abspath(path))
     else:
         vid = parse_video_id(source)
         if not vid:
+            if _looks_like_path(source):
+                raise StemKitError(f"No such audio file: {path}")
             raise StemKitError("Could not parse a YouTube URL or video id out of that")
 
     with _busy_lock:
         if vid in _busy:
             raise StemKitError("This song is already being processed")
         _busy.add(vid)
+        _cancelled.discard(vid)
+    backup: Path | None = None
+    fresh = True
     try:
         plan = resolve_engine(model, stems)
         existing = next((s for s in L.load_songs() if s.get("videoId") == vid), None)
@@ -266,9 +309,17 @@ def split(source: str, model: str = L.MODEL_DEFAULT, stems: list[str] | None = N
         if covered and L.stems_present(vid, L.stems_for(existing)):
             progress("already split with this engine — reusing it")
             return L.describe(existing)
-        if existing:
-            import shutil
-            shutil.rmtree(L.song_dir(vid), ignore_errors=True)
+        # same rule as the app's reuseOrPrepare: start over only when the engine changed or
+        # files are missing; otherwise add the new stems next to the old ones. Unlike the app,
+        # keep the old folder aside until the new split has worked.
+        if existing and (existing.get("model") != plan["tag"]
+                         or not L.stems_present(vid, L.stems_for(existing))):
+            if L.song_dir(vid).exists():
+                backup = L.song_dir(vid).with_name(f".{vid}.previous")
+                shutil.rmtree(backup, ignore_errors=True)
+                L.song_dir(vid).rename(backup)
+        elif existing:
+            fresh = False
         L.song_dir(vid).mkdir(parents=True, exist_ok=True)
         added = existing.get("addedAt") if existing else int(time.time() * 1000)
         started = time.time()
@@ -296,7 +347,9 @@ def split(source: str, model: str = L.MODEL_DEFAULT, stems: list[str] | None = N
             _convert(raw, L.mix_wav(vid))
             raw.unlink(missing_ok=True)
 
+        _check_cancelled(vid)
         produced = _separate(vid, plan, stems, progress)
+        _check_cancelled(vid)
         progress("detecting key")
         detected = detect_key(vid, produced)
         prev_override = ((existing or {}).get("key") or {}).get("override")
@@ -314,7 +367,16 @@ def split(source: str, model: str = L.MODEL_DEFAULT, stems: list[str] | None = N
                 copy_to_export_folder(vid, folder, plan["settings"]["exportFormat"])
             except Exception as e:  # the split itself succeeded
                 progress(f"auto-export to {folder} failed: {e}")
+        if backup:
+            shutil.rmtree(backup, ignore_errors=True)
         return L.describe(song)
+    except BaseException:
+        if fresh:
+            shutil.rmtree(L.song_dir(vid), ignore_errors=True)
+        if backup and backup.exists():
+            backup.rename(L.song_dir(vid))
+        raise
     finally:
         with _busy_lock:
             _busy.discard(vid)
+            _cancelled.discard(vid)
