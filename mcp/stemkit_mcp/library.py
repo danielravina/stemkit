@@ -4,11 +4,14 @@ MCP server see the same songs."""
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
 import tempfile
+import threading
 from pathlib import Path
+from typing import Any, Callable
 
 from .paths import StemKitError, data_dir
 
@@ -26,8 +29,28 @@ DEFAULT_SETTINGS = {"shifts": 1, "htdemucsFt": False, "roformerVocals": False, "
                     "hideVideo": False, "exportFormat": "wav", "exportFolder": ""}
 
 
+# Serialises read-modify-write of library.json inside this process (tool calls and split
+# jobs run on different threads). The app does not take this lock, so a write from an open
+# StemKit window can still race with ours; the app has the same race between its own windows.
+_LOCK = threading.RLock()
+
+
 def key_name(tonic: int, mode: str) -> str:
     return (_MAJOR if mode == "major" else _MINOR)[tonic % 12]
+
+
+def is_finite_number(x: Any) -> bool:
+    """JS `typeof x === 'number' && Number.isFinite(x)` (bools are not numbers)."""
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def _js_truthy(x: Any) -> bool:
+    """JS `!!x`: empty containers are truthy there, NaN is falsy."""
+    if x is None or x is False or x == "":
+        return False
+    if isinstance(x, (int, float)) and not isinstance(x, bool):
+        return x != 0 and x == x
+    return True
 
 
 # ------------------------------------------------------------------ paths
@@ -79,15 +102,27 @@ def get_song(video_id: str) -> dict:
     return s
 
 
+def mutate_songs(fn: Callable[[list[dict]], Any]) -> Any:
+    """Load, change in place, save, under the in-process lock. Returns fn's result."""
+    with _LOCK:
+        songs = load_songs()
+        out = fn(songs)
+        save_songs(songs)
+        return out
+
+
 def upsert_song(song: dict) -> None:
-    songs = [s for s in load_songs() if s.get("videoId") != song["videoId"]]
-    songs.insert(0, song)
-    save_songs(songs)
+    def fn(songs: list[dict]) -> None:
+        songs[:] = [s for s in songs if s.get("videoId") != song["videoId"]]
+        songs.insert(0, song)
+    mutate_songs(fn)
 
 
 def remove_song(video_id: str) -> None:
-    save_songs([s for s in load_songs() if s.get("videoId") != video_id])
-    shutil.rmtree(song_dir(video_id), ignore_errors=True)
+    d = song_dir(video_id)
+    mutate_songs(lambda songs: songs.__setitem__(
+        slice(None), [s for s in songs if s.get("videoId") != video_id]))
+    shutil.rmtree(d, ignore_errors=True)
 
 
 def stems_for(song: dict | None) -> list[str]:
@@ -117,33 +152,35 @@ def describe(song: dict) -> dict:
 def set_key_override(video_id: str, override: str | None) -> dict:
     if override is not None and override not in KEY_NAMES:
         raise StemKitError(f"Unknown key; use one of {KEY_NAMES}")
-    songs = load_songs()
-    song = next((s for s in songs if s.get("videoId") == video_id), None)
-    if not song:
-        raise StemKitError("Unknown song")
-    key = {k: v for k, v in (song.get("key") or {"detected": None}).items() if k != "override"}
-    if override is not None:
-        key["override"] = override
-    song["key"] = key
-    save_songs(songs)
-    return key
+
+    def fn(songs: list[dict]) -> dict:
+        song = next((s for s in songs if s.get("videoId") == video_id), None)
+        if not song:
+            raise StemKitError("Unknown song")
+        key = {k: v for k, v in (song.get("key") or {"detected": None}).items() if k != "override"}
+        if override is not None:
+            key["override"] = override
+        song["key"] = key
+        return key
+    return mutate_songs(fn)
 
 
 def patch_key(video_id: str, detected: str | None) -> dict | None:
-    songs = load_songs()
-    song = next((s for s in songs if s.get("videoId") == video_id), None)
-    if not song:
-        return None
-    old = song.get("key") or {}
-    song["key"] = {"detected": detected, **({"override": old["override"]} if old.get("override") else {})}
-    save_songs(songs)
-    return song["key"]
+    def fn(songs: list[dict]) -> dict | None:
+        song = next((s for s in songs if s.get("videoId") == video_id), None)
+        if not song:
+            return None
+        old = song.get("key") or {}
+        song["key"] = {"detected": detected, **({"override": old["override"]} if old.get("override") else {})}
+        return song["key"]
+    return mutate_songs(fn)
 
 
 def clamp_pitch(n) -> int:
-    if not isinstance(n, (int, float)) or n != n:
+    """src/shared/pitch-range.ts clampPitch (JS Math.round: halves go up)."""
+    if not is_finite_number(n):
         return 0
-    return int(min(PITCH_MAX, max(PITCH_MIN, round(n)))) + 0
+    return int(min(PITCH_MAX, max(PITCH_MIN, math.floor(n + 0.5))))
 
 
 def load_pitch(video_id: str) -> int:
@@ -166,7 +203,7 @@ def _normalize_pan(song: dict, value) -> dict:
         return out
     for sid in stems_for(song):
         p = value.get(sid)
-        if sid in ALL_STEMS and isinstance(p, (int, float)) and p == p:
+        if sid in ALL_STEMS and is_finite_number(p):
             out[sid] = max(-1.0, min(1.0, float(p)))
     return out
 
@@ -202,16 +239,19 @@ def load_settings() -> dict:
 
 
 def save_settings(patch: dict) -> dict:
-    m = {**load_settings(), **(patch or {})}
-    nxt = {"shifts": 2 if m.get("shifts") == 2 else 1,
-           "htdemucsFt": bool(m.get("htdemucsFt")),
-           "roformerVocals": bool(m.get("roformerVocals")),
-           "gpuSplit": bool(m.get("gpuSplit")),
-           "hideVideo": bool(m.get("hideVideo")),
-           "exportFormat": "aac" if m.get("exportFormat") == "aac" else "wav",
-           "exportFolder": m["exportFolder"].strip() if isinstance(m.get("exportFolder"), str) else ""}
-    _write_json(settings_file(), nxt)
-    return nxt
+    """src/main/settings.ts saveSettings."""
+    with _LOCK:
+        m = {**load_settings(), **(patch or {})}
+        shifts = m.get("shifts")
+        nxt = {"shifts": 2 if is_finite_number(shifts) and shifts == 2 else 1,
+               "htdemucsFt": _js_truthy(m.get("htdemucsFt")),
+               "roformerVocals": _js_truthy(m.get("roformerVocals")),
+               "gpuSplit": _js_truthy(m.get("gpuSplit")),
+               "hideVideo": _js_truthy(m.get("hideVideo")),
+               "exportFormat": "aac" if m.get("exportFormat") == "aac" else "wav",
+               "exportFolder": m["exportFolder"].strip() if isinstance(m.get("exportFolder"), str) else ""}
+        _write_json(settings_file(), nxt)
+        return nxt
 
 
 # ------------------------------------------------------------------ names (src/shared/export-rules.ts)
@@ -219,11 +259,29 @@ def save_settings(patch: dict) -> dict:
 NAME_LIMIT = 120
 
 
+def _u16_len(s: str) -> int:
+    """JS string .length (UTF-16 code units): emoji count as 2."""
+    return len(s.encode("utf-16-le", "surrogatepass")) // 2
+
+
+def _u16_slice(s: str, n: int) -> str:
+    """JS s.slice(0, n), except a character is never cut in half."""
+    out, used = [], 0
+    for ch in s:
+        w = 2 if ord(ch) > 0xFFFF else 1
+        if used + w > n:
+            break
+        out.append(ch)
+        used += w
+    return "".join(out)
+
+
 def sanitize_name(name: str) -> str:
+    """src/main/library.ts sanitizeName."""
     clean = re.sub(r'[\\/:*?"<>|]', "-", name).strip()
     if clean in (".", ".."):
         return "stems"
-    return clean[:120] if clean else "stems"
+    return _u16_slice(clean, NAME_LIMIT) if clean else "stems"
 
 
 def _shift_suffix(semitones: int) -> str:
@@ -231,8 +289,8 @@ def _shift_suffix(semitones: int) -> str:
 
 
 def _with_suffix(title: str, suffix: str) -> str:
-    room = max(0, NAME_LIMIT - len(suffix))
-    head = title[:room].rstrip() if len(title) > room else title
+    room = max(0, NAME_LIMIT - _u16_len(suffix))
+    head = _u16_slice(title, room).rstrip() if _u16_len(title) > room else title
     return f"{head}{suffix}"
 
 

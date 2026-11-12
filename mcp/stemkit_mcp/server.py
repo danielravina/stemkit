@@ -15,7 +15,7 @@ from . import engine as E
 from . import exporter as X
 from . import jobs
 from . import library as L
-from .paths import data_dir, ffmpeg, scripts_dir, venv_python, venv_ytdlp
+from .paths import StemKitError, data_dir, ffmpeg, scripts_dir, venv_python, venv_ytdlp
 
 INSTRUCTIONS = """\
 StemKit splits songs (from YouTube or local audio files) into stems: vocals, drums, bass,
@@ -66,7 +66,8 @@ def split_song(source: str, model: str = L.MODEL_DEFAULT, stems: list[str] | Non
     """Split a song into stems and add it to the library. source: YouTube URL or 11-char id,
     or a local audio file path. model: 'roformer_hybrid' (default; engine follows the app's
     settings) or 'htdemucs_6s' (adds guitar + piano). stems: only these (default all).
-    Reuses an existing split made with the same engine. Runs as a job."""
+    Reuses an existing split made with the same engine. Runs as a job. If it fails or is
+    cancelled, the song's previous split stays as it was."""
     jid = jobs.start("split", E.split, source=source, model=model, stems=stems)
     return _wait(jid, wait_seconds)
 
@@ -79,7 +80,8 @@ def job_status(job_id: str, wait_seconds: float = 30) -> dict:
 
 @mcp.tool()
 def cancel_split(video_id: str | None = None) -> dict:
-    """Stop a running split (all running splits when no id is given)."""
+    """Stop a running split (all running splits when no id is given). Its job then fails with
+    'Cancelled'. Returns the ids that were stopped."""
     return {"cancelled": E.cancel(video_id)}
 
 
@@ -98,8 +100,10 @@ def get_song(video_id: str) -> dict:
 
 @mcp.tool()
 def delete_song(video_id: str) -> dict:
-    """Remove a song and its files from the library."""
+    """Remove a song and its files from the library (not while it is being split)."""
     L.get_song(video_id)
+    if E.is_busy(video_id):
+        raise StemKitError("This song is being split; cancel_split it first")
     L.remove_song(video_id)
     return {"deleted": video_id}
 
@@ -134,15 +138,17 @@ def set_pan(video_id: str, pans: dict[str, float]) -> dict:
 def export_audio(video_id: str, mode: str = "mixed", stems: list[str] | None = None,
                  volumes: dict[str, float] | None = None, pans: dict[str, float] | None = None,
                  semitones: int | None = None, format: str | None = None,
-                 dest: str | None = None) -> dict:
+                 dest: str | None = None, overwrite: bool = False) -> dict:
     """Export like the app's Export dialog.
     mode: 'mixed' = one file of the chosen stems ('instrumental' when all but vocals),
           'separate' = a folder with one file per chosen stem, 'original' = the full song.
     stems: which stems (default all). volumes: per-stem gain (1 = as is, 0 = muted).
     pans / semitones: default to what the player saved for the song.
     format: wav (32-bit float, lossless) or aac (.m4a); default from settings.
-    dest: folder (default ~/Downloads). Returns the written path(s)."""
-    return X.export(video_id, mode, stems, volumes, pans, semitones, format, dest)
+    dest: folder (default ~/Downloads). An existing file is kept and the new one is named
+    'name (2)' etc., unless overwrite is true. Arguments are checked before anything is
+    written. Returns the written path(s)."""
+    return X.export(video_id, mode, stems, volumes, pans, semitones, format, dest, overwrite)
 
 
 @mcp.tool()

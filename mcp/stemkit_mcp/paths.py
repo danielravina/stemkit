@@ -7,11 +7,15 @@ import shutil
 import sys
 from pathlib import Path
 
+from mcp.server.mcpserver.exceptions import ToolError
+
 IS_WIN = os.name == "nt"
 
 
-class StemKitError(RuntimeError):
-    pass
+class StemKitError(ToolError):
+    """An expected failure with a message for the user. Subclassing ToolError is what lets
+    the message reach the MCP client: the SDK replaces any other exception's text with
+    'Error executing tool <name>'."""
 
 
 def data_dir() -> Path:
