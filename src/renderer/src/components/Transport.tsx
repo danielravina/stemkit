@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { fmtTime } from '../lib/format'
 import type { SongKey } from '../../../shared/types'
+import { formatShift, transposeKey } from '../../../shared/keys'
+import { PITCH_MIN, PITCH_MAX } from '../lib/pitch'
 import { KeyControl } from './KeyControl'
 import { PlayIcon, PauseIcon, ExternalIcon } from './Icons'
 
@@ -26,6 +28,8 @@ interface Props {
   songKey?: SongKey
   onKeyOverride?: (key: string | null) => void
   onKeyRedetect?: () => void
+  semitones: number
+  onSemitones: (n: number) => void
   // local-file songs have no video to link out to
   youtubeUrl?: string
 }
@@ -163,11 +167,17 @@ export function Transport({
   songKey,
   onKeyOverride,
   onKeyRedetect,
+  semitones,
+  onSemitones,
   youtubeUrl
 }: Props): React.ReactElement {
   // onSeek clamps to the track bounds, so no need to guard here
   const skip = (seconds: number): void => onSeek(getPosition() + seconds)
   const shiftHeld = useShiftHeld()
+  const original = songKey?.override ?? songKey?.detected ?? null
+  const resulting = original ? transposeKey(original, semitones) : null
+  const stepClass =
+    'no-drag w-6 h-6 rounded-full flex items-center justify-center text-sm leading-none text-white/60 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-white/60'
 
   return (
     <div className="glass rounded-2xl px-5 py-4 mt-4 flex flex-col gap-4">
@@ -229,7 +239,32 @@ export function Transport({
           songKey={songKey}
           onOverride={onKeyOverride ?? (() => {})}
           onRedetect={onKeyRedetect ?? (() => {})}
-        />
+        >
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onSemitones(semitones - 1)}
+              disabled={semitones <= PITCH_MIN}
+              aria-label="Lower pitch"
+              className={stepClass}
+            >
+              {'\u2212'}
+            </button>
+            <span className="min-w-[4.5rem] flex items-baseline justify-center gap-1.5 text-sm">
+              {resulting && <span className="font-semibold text-white">{resulting}</span>}
+              {(semitones !== 0 || !resulting) && (
+                <span className="font-mono tabular-nums text-violet-400">{formatShift(semitones)}</span>
+              )}
+            </span>
+            <button
+              onClick={() => onSemitones(semitones + 1)}
+              disabled={semitones >= PITCH_MAX}
+              aria-label="Raise pitch"
+              className={stepClass}
+            >
+              +
+            </button>
+          </div>
+        </KeyControl>
 
         {youtubeUrl && (
           <button

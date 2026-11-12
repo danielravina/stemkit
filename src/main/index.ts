@@ -31,7 +31,7 @@ import {
 import { loadSettings, saveSettings } from './settings'
 import {
   loadSongs, removeSong, clearLibrary, stemBuffers, stemsDir, stemsFor, sanitizeName,
-  exportStems, transcodeToAac, loadStemPan, saveStemPan, setKeyOverride
+  exportStems, transcodeToAac, loadStemPan, saveStemPan, loadPitch, savePitch, setKeyOverride
 } from './library'
 import { AUDIO_EXTENSIONS } from '../shared/local'
 import { detectOnce } from './keydetect'
@@ -235,6 +235,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('library:list', () => loadSongs())
   ipcMain.handle('song:pan:get', (_e, videoId: string) => loadStemPan(videoId))
   ipcMain.handle('song:pan:set', (_e, videoId: string, pans: unknown) => saveStemPan(videoId, pans))
+  ipcMain.handle('song:pitch:get', (_e, videoId: string) => loadPitch(videoId))
+  ipcMain.handle('song:pitch:set', (_e, videoId: string, semitones: unknown) => savePitch(videoId, semitones))
   ipcMain.handle('song:key:detect', (_e, videoId: string, force?: unknown) =>
     detectOnce(videoId, undefined, { force: force === true })
   )

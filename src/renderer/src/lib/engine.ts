@@ -1,6 +1,11 @@
 import type { StemId, StemPanMap } from '../../../shared/types'
+import { clampPitch, createPitchShifter } from './pitch'
+import type { PitchShifter, ShifterFactory } from './pitch'
 
 export type BufferMap = Partial<Record<StemId, AudioBuffer>>
+
+// headroom between scheduling the sources and their first sample
+const START_DELAY = 0.04
 
 export async function decodePayload(
   payload: Record<string, Uint8Array>
@@ -46,6 +51,22 @@ export class StemEngine {
   private anchorYt = 0
   private anchorCtx = 0
   rate = 1
+  // the latest requested pitch; may differ from the applied one while the
+  // shifter loads
+  private wantedPitch = 0
+  private appliedPitch = 0
+  // created once and reused: building a worklet per change is slow and leaks.
+  // The node lives for the app session by design (never disposed here)
+  private shifterLoad: Promise<PitchShifter> | null = null
+  // the shifter master currently feeds, or null when bypassed
+  private routed: PitchShifter | null = null
+  pitchError: string | null = null
+
+  private readonly shifterFactory: ShifterFactory
+
+  constructor(factory: ShifterFactory = createPitchShifter) {
+    this.shifterFactory = factory
+  }
 
   private ensureCtx(): AudioContext {
     if (!this.ctx) {
@@ -55,6 +76,80 @@ export class StemEngine {
       this.master.connect(this.ctx.destination)
     }
     return this.ctx
+  }
+
+  pitch(): number {
+    return this.appliedPitch
+  }
+
+  async setPitch(semitones: number): Promise<void> {
+    this.wantedPitch = clampPitch(semitones)
+    // a failed load is only relevant while a shift is wanted
+    if (this.wantedPitch === 0) this.pitchError = null
+    if (!this.ctx) {
+      // nothing to bypass before the first play
+      if (this.wantedPitch === 0) return
+      // load the shifter now, while paused, so the first play is routed
+      // through it from the start instead of re-routing mid-song once it
+      // lands (decodePayload also opens a context without a gesture)
+      this.ensureCtx()
+    }
+    await this.applyPitch()
+  }
+
+  private async applyPitch(): Promise<void> {
+    if (this.wantedPitch === 0) {
+      // exact bypass: the shifter is never perfectly transparent
+      this.appliedPitch = 0
+      this.route(null)
+      return
+    }
+    let shifter: PitchShifter
+    const load = (this.shifterLoad ??= this.shifterFactory(this.ctx!))
+    try {
+      shifter = await load
+    } catch (err) {
+      // forget the failed load so the next press retries; overlapping calls
+      // awaiting the same load must not clear a newer attempt
+      if (this.shifterLoad === load) this.shifterLoad = null
+      this.pitchError = err instanceof Error ? err.message : String(err)
+      this.appliedPitch = 0
+      this.route(null)
+      return
+    }
+    this.pitchError = null
+    // calls overlapping the load all land here: read the value again so the
+    // last press wins (and a return to 0 meanwhile stays in bypass)
+    const want = this.wantedPitch
+    if (want === 0) return this.route(null)
+    shifter.setSemitones(want)
+    this.appliedPitch = want
+    this.route(shifter)
+  }
+
+  private route(next: PitchShifter | null): void {
+    if (next === this.routed) return
+    const ctx = this.ctx!
+    const master = this.master!
+    master.disconnect()
+    // a bypassed shifter stays alive with no input (it just processes
+    // silence) so the next non-zero pitch does not rebuild it
+    this.routed?.output.disconnect()
+    if (next) {
+      master.connect(next.input)
+      next.output.connect(ctx.destination)
+    } else {
+      master.connect(ctx.destination)
+    }
+    this.routed = next
+    // the path latency changed: restart the sources from where the video
+    // will be once the new path is audible. Re-aligning at expected() would
+    // stall the clock for the start delay plus the latency while the video
+    // keeps running, and that lead would add up on every toggle
+    if (this.playing) {
+      const latency = next ? next.latency : 0
+      this.align(this.expected() + (START_DELAY + latency) * this.rate)
+    }
   }
 
   private getGain(id: StemId): GainNode {
@@ -112,7 +207,7 @@ export class StemEngine {
     this.anchorYt = time
     if (!this.ctx || !this.playing || !this.hasBuffers()) return
     const ctx = this.ctx
-    const startAt = ctx.currentTime + 0.04
+    const startAt = ctx.currentTime + START_DELAY
     for (const id of Object.keys(this.buffers) as StemId[]) {
       const buf = this.buffers[id]
       if (!buf) continue
@@ -124,12 +219,22 @@ export class StemEngine {
       src.start(startAt, Math.min(Math.max(0, time), Math.max(0, buf.duration - 0.01)))
       this.sources.push(src)
     }
-    this.anchorCtx = startAt
+    // anchorCtx is when anchorYt becomes audible: the shifter delays the
+    // sound by its latency, so the clock starts that much later
+    this.anchorCtx = startAt + (this.routed ? this.routed.latency : 0)
   }
 
+  // Held at anchorYt until the first sample is audible, then advances with the
+  // context clock. A re-route aligns ahead by the start delay plus the new
+  // path's latency, so once the new path is audible the clock is exactly where
+  // it would have been without the re-route: it never stalls or goes back,
+  // and the video keeps no lead. The price is a short skip in the audio
+  // (about the start delay plus the latency), not a sync error
   expected(): number {
     if (!this.ctx || !this.playing) return this.anchorYt
-    return this.anchorYt + (this.ctx.currentTime - this.anchorCtx) * this.rate
+    const now = this.ctx.currentTime
+    if (now < this.anchorCtx) return this.anchorYt
+    return this.anchorYt + (now - this.anchorCtx) * this.rate
   }
 
   trackDuration(): number {

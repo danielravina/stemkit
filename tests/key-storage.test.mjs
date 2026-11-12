@@ -1,6 +1,6 @@
 import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { registerHooks } from 'node:module'
+import { registerTsHooks } from './helpers/ts-resolve.mjs'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,30 +8,10 @@ import { join } from 'node:path'
 const root = mkdtempSync(join(tmpdir(), 'stemkit-key-'))
 after(() => rmSync(root, { recursive: true, force: true }))
 const src = (f) => new URL(`../src/main/${f}`, import.meta.url).href
-const parents = new Set([src('library.ts'), src('keydetect.ts')])
 const envStub = `export const userDataDir = () => ${JSON.stringify(root)}
 export const venvPython = () => 'python3'
 export const keyScript = () => 'key.py'`
-const hooks = registerHooks({
-  resolve(specifier, context, next) {
-    if (parents.has(context.parentURL) && specifier === './env') {
-      return { shortCircuit: true, url: `data:text/javascript,${encodeURIComponent(envStub)}` }
-    }
-    if (parents.has(context.parentURL) && specifier === '../shared/types') {
-      return { shortCircuit: true, url: new URL('../src/shared/types.ts', import.meta.url).href }
-    }
-    if (parents.has(context.parentURL) && specifier === '../shared/keys') {
-      return { shortCircuit: true, url: new URL('../src/shared/keys.ts', import.meta.url).href }
-    }
-    if (context.parentURL === src('keydetect.ts') && specifier === './library') {
-      return { shortCircuit: true, url: src('library.ts') }
-    }
-    if (context.parentURL === src('keydetect.ts') && specifier === './separation-slots') {
-      return { shortCircuit: true, url: src('separation-slots.ts') }
-    }
-    return next(specifier, context)
-  }
-})
+const hooks = registerTsHooks({ stubEnv: envStub })
 const { saveSongs, loadSongs, patchSongKey, setKeyOverride } = await import(src('library.ts'))
 const { keyInputs, detectOnce, withOverride } = await import(src('keydetect.ts'))
 hooks.deregister()

@@ -17,3 +17,14 @@ export function parseKey(name: string): { tonic: number; mode: KeyMode } | null 
   if (i < 0) return null
   return i < 12 ? { tonic: i, mode: 'major' } : { tonic: i - 12, mode: 'minor' }
 }
+
+export function transposeKey(name: string, semitones: number): string | null {
+  const key = parseKey(name)
+  return key ? keyName(key.tonic + semitones, key.mode) : null
+}
+
+// U+2212 minus so the sign lines up with the + in monospace
+export function formatShift(semitones: number): string {
+  if (semitones === 0) return '0'
+  return semitones > 0 ? `+${semitones}` : `−${-semitones}`
+}
