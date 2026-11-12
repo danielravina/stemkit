@@ -16,6 +16,9 @@ const hooks = registerHooks({
     if (context.parentURL === libraryUrl && specifier === '../shared/types') {
       return { shortCircuit: true, url: new URL('../src/shared/types.ts', import.meta.url).href }
     }
+    if (context.parentURL === libraryUrl && specifier === '../shared/keys') {
+      return { shortCircuit: true, url: new URL('../src/shared/keys.ts', import.meta.url).href }
+    }
     return next(specifier, context)
   }
 })

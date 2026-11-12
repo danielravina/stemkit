@@ -73,7 +73,9 @@ function findNode(requiredMajor) {
 }
 
 const STEPS = {
-  'test:audio': [['node', '--experimental-strip-types', '--test', 'tests/engine.test.mjs', 'tests/pan-storage.test.mjs']],
+  'test:audio': [['node', '--experimental-strip-types', '--test', 'tests/engine.test.mjs', 'tests/pan-storage.test.mjs', 'tests/keys.test.mjs', 'tests/key-storage.test.mjs']],
+  // STEMKIT_PY points at an interpreter that has numpy (e.g. the dev venv)
+  'test:py': [[process.env.STEMKIT_PY || (IS_WIN ? 'python' : 'python3'), '-m', 'unittest', 'discover', '-s', 'python/tests', '-v']],
   dev: [['electron-vite', 'dev']],
   build: [['electron-vite', 'build']],
   typecheck: [
@@ -122,6 +124,7 @@ function ensureFfmpeg() {
 }
 
 function resolveBin(name) {
+  if (path.isAbsolute(name) && fs.existsSync(name)) return name
   const ext = IS_WIN ? '.cmd' : ''
   const local = path.join(ROOT, 'node_modules', '.bin', name + ext)
   if (fs.existsSync(local)) return local

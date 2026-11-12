@@ -17,6 +17,7 @@ import {
   detectNvidiaGpu,
   detectAmdGpu
 } from './env'
+import { runKeyScript } from './keydetect'
 
 /* self-test mode, driven by STEMKIT_SMOKE=1 (used by the windows-smoke CI
    job and manually on linux): runs the real bootstrap then separates a
@@ -191,6 +192,14 @@ export async function runSmoke(): Promise<boolean> {
         return false
       }
     }
+
+    log(`run: key detection on ${mix}`)
+    const key = await runKeyScript([mix])
+    if (key.detected === null) {
+      log('FAIL: key detection')
+      return false
+    }
+    log(`key detection ok: ${key.detected}`)
 
     // roformer engine on CPU: validates the vendored model code, extra pip
     // deps and its own checkpoint downloader on this platform

@@ -114,6 +114,13 @@ export function separateScript(): string {
   return join(app.getAppPath(), 'python', 'separate.py')
 }
 
+export function keyScript(): string {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, 'python', 'key.py')
+  }
+  return join(app.getAppPath(), 'python', 'key.py')
+}
+
 export function roformerScript(): string {
   if (app.isPackaged) {
     return join(process.resourcesPath, 'python', 'roformer.py')

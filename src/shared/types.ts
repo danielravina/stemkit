@@ -11,6 +11,11 @@ export const DEFAULT_STEMS: string[] = ['vocals', 'drums', 'bass', 'other']
 export const MODEL_DEFAULT = 'roformer_hybrid'
 export const MODEL_EXTENDED = 'htdemucs_6s'
 
+export interface SongKey {
+  detected: string | null
+  override?: string
+}
+
 export interface Song {
   videoId: string
   title: string
@@ -21,6 +26,7 @@ export interface Song {
   took?: number
   // local audio files carry their own mix; absent means a YouTube source
   source?: 'local'
+  key?: SongKey
 }
 
 export interface AppSettings {
@@ -130,6 +136,9 @@ export interface StemKitApi {
   clearLibrary(): Promise<void>
   getBuffers(videoId: string): Promise<Record<string, Uint8Array>>
   getStemPan(videoId: string): Promise<StemPanMap>
+  // force retries a detection that already ran (normally a stored result is final)
+  detectKey(videoId: string, force?: boolean): Promise<SongKey>
+  setKeyOverride(videoId: string, override: string | null): Promise<SongKey>
   setStemPan(videoId: string, pans: StemPanMap): Promise<void>
   exportStem(videoId: string, stem: string): Promise<{ saved: boolean; path?: string }>
   exportAllStems(videoId: string): Promise<{ saved: boolean; path?: string; count?: number }>

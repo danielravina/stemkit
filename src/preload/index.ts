@@ -18,6 +18,8 @@ const api: StemKitApi = {
   clearLibrary: () => ipcRenderer.invoke('library:clear'),
   getBuffers: (videoId) => ipcRenderer.invoke('song:buffers', videoId),
   getStemPan: (videoId) => ipcRenderer.invoke('song:pan:get', videoId),
+  detectKey: (videoId, force) => ipcRenderer.invoke('song:key:detect', videoId, force === true),
+  setKeyOverride: (videoId, override) => ipcRenderer.invoke('song:key:set', videoId, override),
   setStemPan: (videoId, pans) => ipcRenderer.invoke('song:pan:set', videoId, pans),
   exportStem: (videoId, stem) => ipcRenderer.invoke('stem:export', videoId, stem),
   exportAllStems: (videoId) => ipcRenderer.invoke('stems:export-all', videoId),

@@ -3,7 +3,8 @@ import { readFile, cp } from 'fs/promises'
 import { spawn } from 'child_process'
 import { join } from 'path'
 import { userDataDir } from './env'
-import { DEFAULT_STEMS, type Song, type StemPanMap, type StemId } from '../shared/types'
+import { KEY_NAMES } from '../shared/keys'
+import { DEFAULT_STEMS, type Song, type SongKey, type StemPanMap, type StemId } from '../shared/types'
 
 function libraryFile(): string {
   return join(userDataDir(), 'library.json')
@@ -49,6 +50,27 @@ export function upsertSong(song: Song): Song[] {
   songs.unshift(song)
   saveSongs(songs)
   return songs
+}
+
+// rewrites only this song's entry, keeping its place in the list; a song
+// removed while detection ran must not be resurrected, hence null + no write
+export function patchSongKey(videoId: string, key: SongKey): Song | null {
+  const songs = loadSongs()
+  const song = songs.find((s) => s.videoId === videoId)
+  if (!song) return null
+  song.key = key
+  saveSongs(songs)
+  return song
+}
+
+export function setKeyOverride(videoId: string, override: string | null): SongKey {
+  if (override !== null && !KEY_NAMES.includes(override)) throw new Error('Unknown key')
+  const song = loadSongs().find((s) => s.videoId === videoId)
+  if (!song) throw new Error('Unknown song')
+  const { override: _old, ...rest } = song.key ?? { detected: null }
+  const key: SongKey = override === null ? rest : { ...rest, override }
+  patchSongKey(videoId, key)
+  return key
 }
 
 export function removeSong(videoId: string): Song[] {

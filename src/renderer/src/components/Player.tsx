@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AppSettings, Song, StemId, StemPanMap } from '../../../shared/types'
+import type { AppSettings, Song, SongKey, StemId, StemPanMap } from '../../../shared/types'
 import { engine, decodePayload, type BufferMap } from '../lib/engine'
 import { buildStemMeta } from '../lib/stems'
 import { fmtTime } from '../lib/format'
@@ -87,6 +87,9 @@ export function Player({ song, settings }: Props): React.ReactElement {
   const [mutes, setMutes] = useState<Set<StemId>>(new Set())
   const [solos, setSolos] = useState<Set<StemId>>(new Set())
   const [master, setMaster] = useState(0.9)
+  const [songKey, setSongKey] = useState<SongKey | undefined>(song.key)
+  const songIdRef = useRef(song.videoId)
+  songIdRef.current = song.videoId
   const [preset, setPreset] = useState<PresetId | 'custom'>('all')
 
   const stemMeta = useMemo(() => buildStemMeta(Object.keys(buffers) as StemId[]), [buffers])
@@ -124,6 +127,21 @@ export function Player({ song, settings }: Props): React.ReactElement {
     engine.stopAll()
 
     let cancelled = false
+    setSongKey(song.key)
+    // the songs list is not reloaded after detection or an override, so
+    // song.key can be stale: detectKey returns the stored key cheaply and
+    // only detects when none exists
+    const hadKey = song.key !== undefined
+    window.stemkit
+      .detectKey(song.videoId)
+      .then((k) => {
+        if (!cancelled) setSongKey(k)
+      })
+      .catch(() => {
+        // detection is best-effort: show '?' rather than analysing forever,
+        // but keep a key we already had
+        if (!cancelled && !hadKey) setSongKey({ detected: null })
+      })
     const flushPan = (): void => {
       if (panSaveTimer.current !== null) clearTimeout(panSaveTimer.current)
       panSaveTimer.current = null
@@ -495,6 +513,30 @@ export function Player({ song, settings }: Props): React.ReactElement {
             onPreset={applyPreset}
             master={master}
             onMaster={setMaster}
+            songKey={songKey}
+            onKeyOverride={(key) => {
+              const id = song.videoId
+              window.stemkit
+                .setKeyOverride(id, key)
+                .then((k) => {
+                  if (songIdRef.current === id) setSongKey(k)
+                })
+                .catch(() => {})
+            }}
+            onKeyRedetect={() => {
+              const id = song.videoId
+              const previous = songKey
+              // '…' while it runs, like the first detection
+              setSongKey(undefined)
+              window.stemkit
+                .detectKey(id, true)
+                .then((k) => {
+                  if (songIdRef.current === id) setSongKey(k)
+                })
+                .catch(() => {
+                  if (songIdRef.current === id) setSongKey(previous)
+                })
+            }}
             youtubeUrl={youtubeUrl ?? undefined}
           />
 
