@@ -327,6 +327,28 @@ export function Player({ song, settings }: Props): React.ReactElement {
     void window.stemkit.exportAllStems(song.videoId)
   }, [song.videoId])
 
+  const [midiBusyStems, setMidiBusyStems] = useState<Set<string>>(new Set())
+  const [midiError, setMidiError] = useState<string | null>(null)
+
+  const exportStemMidi = useCallback(
+    (stem: string): void => {
+      setMidiError(null)
+      setMidiBusyStems((prev) => new Set(prev).add(stem))
+      window.stemkit
+        .exportStemMidi(song.videoId, stem)
+        .catch((err: unknown) =>
+          setMidiError(err instanceof Error ? err.message : String(err))
+        )
+        .finally(() => {
+          setMidiBusyStems((prev) => {
+            const next = new Set(prev)
+            next.delete(stem)
+            return next
+          })
+        })
+    },
+    [song.videoId]
+  )
 
 
   const applyPreset = (p: PresetId): void => {
@@ -526,9 +548,17 @@ export function Player({ song, settings }: Props): React.ReactElement {
                 onVolume={(v) => setVols((prev) => ({ ...prev, [meta.id]: v }))}
                 onSeek={seekTo}
                 onExport={() => exportStem(meta.id)}
+                onExportMidi={() => exportStemMidi(meta.id)}
+                midiBusy={midiBusyStems.has(meta.id)}
               />
             ))}
           </div>
+
+          {midiError && (
+            <div className="mt-2 rounded-xl bg-rose-500/10 border border-rose-400/20 px-3 py-2 text-xs text-rose-200 break-words">
+              MIDI export failed: {midiError}
+            </div>
+          )}
         </div>
       </div>
     </div>
