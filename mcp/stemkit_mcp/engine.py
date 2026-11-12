@@ -267,6 +267,20 @@ def _looks_like_path(source: str) -> bool:
                                or Path(s).suffix.lower().lstrip(".") in AUDIO_EXTENSIONS)
 
 
+def _recover_interrupted(vid: str) -> None:
+    """A '.<id>.previous' folder left over means a re-split was killed half way (the server
+    exited). Put the old split back unless the song's files are complete for its entry."""
+    stale = L.song_dir(vid).with_name(f".{vid}.previous")
+    if not stale.exists():
+        return
+    song = next((s for s in L.load_songs() if s.get("videoId") == vid), None)
+    if song and not L.stems_present(vid, L.stems_for(song)):
+        shutil.rmtree(L.song_dir(vid), ignore_errors=True)
+        stale.rename(L.song_dir(vid))
+    else:
+        shutil.rmtree(stale, ignore_errors=True)
+
+
 def split(source: str, model: str = L.MODEL_DEFAULT, stems: list[str] | None = None,
           progress: Progress = lambda _: None) -> dict:
     """YouTube URL / id or a local audio file -> stems in the library.
@@ -302,6 +316,7 @@ def split(source: str, model: str = L.MODEL_DEFAULT, stems: list[str] | None = N
     backup: Path | None = None
     fresh = True
     try:
+        _recover_interrupted(vid)
         plan = resolve_engine(model, stems)
         existing = next((s for s in L.load_songs() if s.get("videoId") == vid), None)
         covered = (existing and existing.get("model") == plan["tag"] and existing.get("stems")
