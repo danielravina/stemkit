@@ -1,0 +1,21 @@
+[project]
+name = "stemkit-mcp"
+version = "0.1.0"
+description = "StemKit as an MCP server: split songs into stems, manage the library, export parts or mixes"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=2.3,<3",
+    "numpy>=1.24",
+]
+
+[project.scripts]
+stemkit-mcp = "stemkit_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["stemkit_mcp"]
