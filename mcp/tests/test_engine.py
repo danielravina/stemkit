@@ -202,6 +202,32 @@ def test_failed_add_stems_keeps_existing_stems(fake_engine, song_file, monkeypat
     assert after["files"]["stems/drums.wav"] == before["files"]["stems/drums.wav"]
 
 
+def test_resplit_killed_half_way_is_recovered(fake_engine, song_file):
+    """Server killed mid re-split: old split aside as .<id>.previous, partial new folder."""
+    E.split(str(song_file))
+    vid = E.local_song_id(str(song_file))
+    before = snapshot(vid)
+    d = L.song_dir(vid)
+    d.rename(d.with_name(f".{vid}.previous"))
+    (d / "stems").mkdir(parents=True)
+    (d / "stems" / "vocals.wav").write_bytes(b"partial")
+    out = E.split(str(song_file))                      # same engine: the old split is reused
+    assert snapshot(vid) == before and out["stems"] == before["songs"][0]["stems"]
+    assert len(fake_engine.calls("separate.py")) == 1
+    assert not d.with_name(f".{vid}.previous").exists()
+
+
+def test_leftover_backup_after_a_finished_split_is_dropped(fake_engine, song_file):
+    E.split(str(song_file))
+    vid = E.local_song_id(str(song_file))
+    before = snapshot(vid)
+    stale = L.song_dir(vid).with_name(f".{vid}.previous")
+    stale.mkdir()
+    (stale / "old.wav").write_bytes(b"x")
+    E.split(str(song_file))
+    assert snapshot(vid) == before and not stale.exists()
+
+
 def test_successful_resplit_replaces_and_cleans_up(fake_engine, song_file):
     E.split(str(song_file))
     vid = E.local_song_id(str(song_file))
