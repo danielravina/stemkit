@@ -71,16 +71,14 @@ class KeyDetectionTest(unittest.TestCase):
     def test_a_minor_chord_progression(self):
         from key import detect_key
 
-        tonic, mode, conf = detect_key(a_minor_signal(), SR)
+        tonic, mode = detect_key(a_minor_signal(), SR)
         self.assertEqual((tonic, mode), (9, "minor"))
-        self.assertTrue(0 <= conf <= 1)
 
     def test_g_major_triad(self):
         from key import detect_key
 
-        tonic, mode, conf = detect_key(g_major_signal(), SR)
+        tonic, mode = detect_key(g_major_signal(), SR)
         self.assertEqual((tonic, mode), (7, "major"))
-        self.assertTrue(0 <= conf <= 1)
 
     def test_silence_fails(self):
         with tempfile.TemporaryDirectory() as d:
@@ -101,7 +99,7 @@ class KeyDetectionTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         out = json.loads(r.stdout.strip().splitlines()[-1])
         self.assertEqual(out["type"], "key")
-        self.assertEqual((out["tonic"], out["mode"]), (7, "major"))
+        self.assertEqual(out, {"type": "key", "tonic": 7, "mode": "major"})
 
 
 if __name__ == "__main__":

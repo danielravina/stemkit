@@ -53,11 +53,7 @@ export function runKeyScript(inputs: string[]): Promise<SongKey> {
             Number.isInteger(msg.tonic) &&
             (msg.mode === 'major' || msg.mode === 'minor')
           ) {
-            const confidence = Number(msg.confidence)
-            return done({
-              detected: keyName(msg.tonic, msg.mode as KeyMode),
-              ...(Number.isFinite(confidence) ? { confidence } : {})
-            })
+            return done({ detected: keyName(msg.tonic, msg.mode as KeyMode) })
           }
         } catch {
           // not a JSON line: ignore

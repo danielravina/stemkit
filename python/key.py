@@ -1,7 +1,7 @@
 """numpy-only musical key detection (Krumhansl-Kessler profiles).
 
 CLI: key.py --input A.wav [--input B.wav ...]
-prints one json line: {"type":"key","tonic":0-11 (C=0),"mode":"major"|"minor","confidence":0-1}
+prints one json line: {"type":"key","tonic":0-11 (C=0),"mode":"major"|"minor"}
 """
 import argparse
 import struct
@@ -75,8 +75,7 @@ def detect_key(mono, sr):
             r = np.corrcoef(vec, np.roll(profile, tonic))[0, 1]
             scores.append((0.0 if np.isnan(r) else float(r), tonic, mode))
     scores.sort(key=lambda s: s[0], reverse=True)
-    confidence = float(np.clip((scores[0][0] - scores[1][0]) / 0.2, 0, 1))
-    return scores[0][1], scores[0][2], confidence
+    return scores[0][1], scores[0][2]
 
 
 def main():
@@ -96,8 +95,8 @@ def main():
     if n == 0:
         fail("empty wav")
     mono = np.sum([m[:n] for m in mixes], axis=0)
-    tonic, mode, confidence = detect_key(mono, sr)
-    emit(type="key", tonic=tonic, mode=mode, confidence=confidence)
+    tonic, mode = detect_key(mono, sr)
+    emit(type="key", tonic=tonic, mode=mode)
 
 
 if __name__ == "__main__":

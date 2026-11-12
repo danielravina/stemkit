@@ -14,7 +14,6 @@ export const MODEL_EXTENDED = 'htdemucs_6s'
 export interface SongKey {
   detected: string | null
   override?: string
-  confidence?: number
 }
 
 export interface Song {

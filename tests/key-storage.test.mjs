@@ -41,7 +41,7 @@ const libPath = join(root, 'library.json')
 
 test('patchSongKey rewrites only that song; missing song is a no-op', () => {
   saveSongs([mk('a'), mk('b')])
-  const key = { detected: 'Am', confidence: 0.8 }
+  const key = { detected: 'Am' }
   const out = patchSongKey('b', key)
   assert.deepEqual(out.key, key)
   const songs = loadSongs()
@@ -53,8 +53,8 @@ test('patchSongKey rewrites only that song; missing song is a no-op', () => {
 })
 
 test('setKeyOverride validates, stores and clears while keeping detected', () => {
-  saveSongs([{ ...mk('a'), key: { detected: 'Am', confidence: 0.5 } }])
-  assert.deepEqual(setKeyOverride('a', 'F♯m'), { detected: 'Am', confidence: 0.5, override: 'F♯m' })
+  saveSongs([{ ...mk('a'), key: { detected: 'Am' } }])
+  assert.deepEqual(setKeyOverride('a', 'F♯m'), { detected: 'Am', override: 'F♯m' })
   assert.equal(loadSongs()[0].key.override, 'F♯m')
   assert.throws(() => setKeyOverride('a', 'Zm'), /Unknown key/)
   const cleared = setKeyOverride('a', null)
@@ -79,11 +79,11 @@ test('detectOnce dedupes concurrent calls, caches, and skips unknown songs', asy
   const run = async () => {
     calls++
     await new Promise((r) => setTimeout(r, 20))
-    return { detected: 'C', confidence: 0.9 }
+    return { detected: 'C' }
   }
   const [x, y] = await Promise.all([detectOnce('c', run), detectOnce('c', run)])
   assert.equal(calls, 1)
-  assert.deepEqual(x, { detected: 'C', confidence: 0.9 })
+  assert.deepEqual(x, { detected: 'C' })
   assert.deepEqual(y, x)
   assert.deepEqual(await detectOnce('c', run), x)
   assert.equal(calls, 1)
