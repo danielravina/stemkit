@@ -36,7 +36,7 @@ import { parseVideoId } from '../shared/url'
 import { AUDIO_EXTENSIONS, audioExtension, localSongId } from '../shared/local'
 import { cacheThumbnail } from './thumbs'
 import { acquireSeparation } from './separation-slots'
-import { keyInputs, runKeyScript, withOverride } from './keydetect'
+import { keyInputs, runKeyScript, stamped, withOverride } from './keydetect'
 
 interface ActiveJob {
   videoId: string
@@ -176,7 +176,7 @@ async function detectKey(job: ActiveJob, producedStems: string[]): Promise<SongK
   progress(job, 'finalize', 100, 'Detecting key')
   // no separation slot: ours is already released, and queueing behind another
   // song's whole split would delay this song's library entry
-  return runKeyScript(keyInputs(job.videoId, producedStems))
+  return stamped(await runKeyScript(keyInputs(job.videoId, producedStems)))
 }
 
 function finalizeJob(
