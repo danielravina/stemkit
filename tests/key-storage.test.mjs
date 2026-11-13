@@ -13,7 +13,7 @@ export const venvPython = () => 'python3'
 export const keyScript = () => 'key.py'`
 const hooks = registerTsHooks({ stubEnv: envStub })
 const { saveSongs, loadSongs, patchSongKey, setKeyOverride } = await import(src('library.ts'))
-const { keyInputs, detectOnce, withOverride } = await import(src('keydetect.ts'))
+const { keyInputs, detectOnce, withOverride, KEY_VERSION } = await import(src('keydetect.ts'))
 hooks.deregister()
 
 const mk = (id) => ({ videoId: id, stems: ['vocals', 'drums', 'bass'], title: id, duration: 10, addedAt: 1 })
@@ -63,7 +63,7 @@ test('detectOnce dedupes concurrent calls, caches, and skips unknown songs', asy
   }
   const [x, y] = await Promise.all([detectOnce('c', run), detectOnce('c', run)])
   assert.equal(calls, 1)
-  assert.deepEqual(x, { detected: 'C' })
+  assert.deepEqual(x, { detected: 'C', version: KEY_VERSION })
   assert.deepEqual(y, x)
   assert.deepEqual(await detectOnce('c', run), x)
   assert.equal(calls, 1)
@@ -79,9 +79,9 @@ test('detectOnce attempts once: a failure is stored and never retried', async ()
     calls++
     return { detected: null }
   }
-  assert.deepEqual(await detectOnce('f', run), { detected: null })
-  assert.deepEqual(loadSongs()[0].key, { detected: null })
-  assert.deepEqual(await detectOnce('f', run), { detected: null })
+  assert.deepEqual(await detectOnce('f', run), { detected: null, version: KEY_VERSION })
+  assert.deepEqual(loadSongs()[0].key, { detected: null, version: KEY_VERSION })
+  assert.deepEqual(await detectOnce('f', run), { detected: null, version: KEY_VERSION })
   assert.equal(calls, 1)
 })
 
@@ -92,9 +92,10 @@ test('detectOnce with force retries a stored failure and keeps the override', as
   const run = async () => (calls++, { detected: 'C' })
   assert.deepEqual(await detectOnce('r', run), { detected: null, override: 'Am' })
   assert.equal(calls, 0)
-  assert.deepEqual(await detectOnce('r', run, { force: true }), { detected: 'C', override: 'Am' })
+  const fresh = { detected: 'C', override: 'Am', version: KEY_VERSION }
+  assert.deepEqual(await detectOnce('r', run, { force: true }), fresh)
   assert.equal(calls, 1)
-  assert.deepEqual(loadSongs()[0].key, { detected: 'C', override: 'Am' })
+  assert.deepEqual(loadSongs()[0].key, fresh)
 })
 
 test('a forced detection joins one already in flight', async () => {
@@ -124,4 +125,25 @@ test('withOverride carries a previous override onto a fresh detection', () => {
   assert.deepEqual(withOverride({ detected: 'C' }, { detected: 'G', override: 'Am' }), { detected: 'C', override: 'Am' })
   assert.deepEqual(withOverride({ detected: 'C' }, { detected: 'G' }), { detected: 'C' })
   assert.deepEqual(withOverride({ detected: 'C' }, undefined), { detected: 'C' })
+})
+
+test('a key detected by an older algorithm is detected again once, keeping the override', async () => {
+  // keys stored before KEY_VERSION came from a chroma biased by the FFT bin
+  // layout: they are redone on the next open instead of staying wrong
+  saveSongs([{ ...mk('o'), key: { detected: 'Am', override: 'G' } }])
+  mkdirSync(join(root, 'songs', 'o'), { recursive: true })
+  let calls = 0
+  const run = async () => (calls++, { detected: 'F' })
+  const fresh = { detected: 'F', override: 'G', version: KEY_VERSION }
+  assert.deepEqual(await detectOnce('o', run), fresh)
+  assert.deepEqual(loadSongs()[0].key, fresh)
+  assert.deepEqual(await detectOnce('o', run), fresh)
+  assert.equal(calls, 1)
+})
+
+test('an old stored failure is not retried: only a detected key is stale', async () => {
+  saveSongs([{ ...mk('n'), key: { detected: null } }])
+  let calls = 0
+  assert.deepEqual(await detectOnce('n', async () => (calls++, { detected: 'C' })), { detected: null })
+  assert.equal(calls, 0)
 })

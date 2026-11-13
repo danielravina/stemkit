@@ -14,6 +14,9 @@ export const MODEL_EXTENDED = 'htdemucs_6s'
 export interface SongKey {
   detected: string | null
   override?: string
+  // detection algorithm that produced `detected` (absent: 1, before the
+  // chroma fix); an older detected key is redone on the next open
+  version?: number
 }
 
 export interface Song {

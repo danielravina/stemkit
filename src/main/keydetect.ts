@@ -9,6 +9,21 @@ import type { SongKey } from '../shared/types'
 
 const TIMEOUT_MS = 120_000
 
+// bump when python/key.py changes what it detects: songs keep a detected key
+// for good, so without this they would keep showing the old algorithm's key
+// (2: chroma no longer biased by the FFT bin layout)
+export const KEY_VERSION = 2
+
+export function stamped(key: SongKey): SongKey {
+  return { ...key, version: KEY_VERSION }
+}
+
+// only a key the old algorithm detected is redone; a stored failure stays
+// final (it means no venv or no audio, not a wrong answer)
+function isStale(key: SongKey): boolean {
+  return key.detected !== null && (key.version ?? 1) < KEY_VERSION
+}
+
 // drums carry no pitch and only blur the chroma, so they are left out; with
 // nothing else on disk the full mix is the fallback
 export function keyInputs(videoId: string, stems: string[]): string[] {
@@ -84,7 +99,7 @@ export function detectOnce(
   if (!song) return Promise.resolve({ detected: null })
   // detection runs once per song on its own: any stored key, even
   // { detected: null } (attempted and failed), is final unless forced
-  if (song.key && !force) return Promise.resolve(song.key)
+  if (song.key && !force && !isStale(song.key)) return Promise.resolve(song.key)
   const job = (async (): Promise<SongKey> => {
     const release = await acquireSeparation()
     try {
@@ -92,7 +107,7 @@ export function detectOnce(
       // keep a user override that was set before detection finished; a
       // failure is stored too so it is not retried automatically
       const current = loadSongs().find((s) => s.videoId === videoId)?.key
-      const key = withOverride(result, current)
+      const key = withOverride(stamped(result), current)
       patchSongKey(videoId, key)
       return key
     } finally {
