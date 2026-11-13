@@ -80,6 +80,28 @@ class KeyDetectionTest(unittest.TestCase):
         tonic, mode = detect_key(g_major_signal(), SR)
         self.assertEqual((tonic, mode), (7, "major"))
 
+    def test_white_noise_gives_a_flat_chroma(self):
+        # noise has no pitch: every pitch class must weigh about the same. FFT
+        # bins are linear in frequency, so between 55 Hz and 2 kHz A gets ~2x
+        # the bins of C#; summing bins per pitch class made the bin layout,
+        # not the music, decide the key
+        from key import chroma
+
+        rng = np.random.default_rng(0)
+        vec = chroma(rng.standard_normal(SR * 20).astype(np.float32), SR)
+        self.assertLess(vec.max() / vec.min(), 1.15)
+
+    def test_d_flat_major_progression(self):
+        # C#/Db gets the fewest FFT bins: the key the old detector missed most
+        from key import detect_key
+
+        i = chord([49, 53, 56], 1.0)
+        iv = chord([54, 58, 61], 1.0)
+        v = chord([56, 60, 63], 1.0)
+        scale = np.concatenate([tone(m, 0.25) for m in [49, 51, 53, 54, 56, 58, 60, 61]])
+        sig = np.concatenate([i, iv, i, v, i, scale, i]).astype(np.float32)
+        self.assertEqual(detect_key(sig, SR), (1, "major"))
+
     def test_silence_fails(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "silence.wav"

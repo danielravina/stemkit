@@ -13,8 +13,11 @@ from separate import emit, fail, load_wav
 MAX_SECONDS = 240
 FRAME = 8192
 HOP = 4096
-MIN_HZ = 55.0
-MAX_HZ = 2000.0
+# notes analysed: four whole octaves, A2 (110 Hz) to G#6 (1661 Hz), so every
+# pitch class gets the same number of notes; below A2 a semitone is narrower
+# than an FFT bin and some notes would get no bin at all
+LOW_NOTE = 45
+HIGH_NOTE = LOW_NOTE + 48
 
 MAJOR = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
 MINOR = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
@@ -55,13 +58,28 @@ def chroma(mono, sr):
         mono = np.pad(mono, (0, FRAME - mono.size))
     window = np.hanning(FRAME).astype(np.float32)
     freqs = np.fft.rfftfreq(FRAME, 1.0 / sr)
-    bins = np.nonzero((freqs >= MIN_HZ) & (freqs <= MAX_HZ))[0]
-    # pitch class per bin, A = 9
-    pcs = (np.round(12 * np.log2(freqs[bins] / 440.0)).astype(int) + 9) % 12
+    # MIDI note per bin (A4 = 69); bins below 1 Hz are left out before the log
+    midi = np.full(freqs.size, -1)
+    audible = freqs > 1
+    midi[audible] = np.round(12 * np.log2(freqs[audible] / 440.0)).astype(int) + 69
+    bins = np.nonzero((midi >= LOW_NOTE) & (midi < HIGH_NOTE))[0]
+    midi = midi[bins]
+    # FFT bins are linear in frequency, so higher notes span more bins. Average
+    # the bins of each note first, so every note weighs the same, then add the
+    # notes up per pitch class (C = 0)
+    notes, note_of_bin = np.unique(midi, return_inverse=True)
+    bins_per_note = np.bincount(note_of_bin)
+    pc_of_note = notes % 12
     vec = np.zeros(12)
     for start in range(0, mono.size - FRAME + 1, HOP):
         mag = np.abs(np.fft.rfft(mono[start : start + FRAME] * window))[bins]
-        vec += np.bincount(pcs, weights=np.log1p(mag), minlength=12)
+        per_note = np.bincount(note_of_bin, weights=mag) / bins_per_note
+        frame = np.bincount(pc_of_note, weights=per_note, minlength=12)
+        # each frame votes with the same weight: loud passages do not drown
+        # the rest of the song
+        peak = frame.max()
+        if peak > 0:
+            vec += frame / peak
     return vec
 
 
